@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Car, Menu, User, Plus, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Link } from "react-router-dom";
 
 const Navigation = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -13,10 +14,10 @@ const Navigation = () => {
       <div className="container mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
-          <div className="flex items-center gap-2">
+          <Link to="/" className="flex items-center gap-2">
             <Car className="h-8 w-8 text-blue-600" />
             <span className="text-2xl font-bold text-gray-800">CarNeeds.lk</span>
-          </div>
+          </Link>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-8">
@@ -32,9 +33,9 @@ const Navigation = () => {
             <a href="#" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">
               Finance
             </a>
-            <a href="#" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">
+            <Link to="/about" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">
               About
-            </a>
+            </Link>
           </div>
 
           {/* Desktop Actions */}
@@ -47,19 +48,23 @@ const Navigation = () => {
                     3
                   </Badge>
                 </Button>
-                <Button className="bg-orange-500 hover:bg-orange-600">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Post Vehicle
-                </Button>
+                <Link to="/post-vehicle">
+                  <Button className="bg-orange-500 hover:bg-orange-600">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Post Vehicle
+                  </Button>
+                </Link>
                 <Button variant="ghost">
                   <User className="h-5 w-5" />
                 </Button>
               </>
             ) : (
               <>
-                <Button variant="ghost" className="text-gray-700 hover:text-blue-600">
-                  Login
-                </Button>
+                <Link to="/login">
+                  <Button variant="ghost" className="text-gray-700 hover:text-blue-600">
+                    Login
+                  </Button>
+                </Link>
                 <Button className="bg-blue-600 hover:bg-blue-700">
                   Sign Up
                 </Button>
@@ -86,15 +91,17 @@ const Navigation = () => {
               <a href="#" className="text-gray-700 hover:text-blue-600 font-medium">Sell</a>
               <a href="#" className="text-gray-700 hover:text-blue-600 font-medium">Rent</a>
               <a href="#" className="text-gray-700 hover:text-blue-600 font-medium">Finance</a>
-              <a href="#" className="text-gray-700 hover:text-blue-600 font-medium">About</a>
+              <Link to="/about" className="text-gray-700 hover:text-blue-600 font-medium">About</Link>
               
               <div className="flex flex-col space-y-2 pt-4 border-t border-gray-200">
                 {isLoggedIn ? (
                   <>
-                    <Button className="bg-orange-500 hover:bg-orange-600 justify-start">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Post Vehicle
-                    </Button>
+                    <Link to="/post-vehicle">
+                      <Button className="bg-orange-500 hover:bg-orange-600 justify-start w-full">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Post Vehicle
+                      </Button>
+                    </Link>
                     <Button variant="ghost" className="justify-start">
                       <MessageCircle className="h-4 w-4 mr-2" />
                       Messages (3)
@@ -106,8 +113,10 @@ const Navigation = () => {
                   </>
                 ) : (
                   <>
-                    <Button variant="ghost" className="justify-start">Login</Button>
-                    <Button className="bg-blue-600 hover:bg-blue-700 justify-start">Sign Up</Button>
+                    <Link to="/login">
+                      <Button variant="ghost" className="justify-start w-full">Login</Button>
+                    </Link>
+                    <Button className="bg-blue-600 hover:bg-blue-700 justify-start w-full">Sign Up</Button>
                   </>
                 )}
               </div>
