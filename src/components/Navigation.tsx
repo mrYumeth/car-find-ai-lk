@@ -65,9 +65,11 @@ const Navigation = () => {
                     Login
                   </Button>
                 </Link>
-                <Button className="bg-blue-600 hover:bg-blue-700">
-                  Sign Up
-                </Button>
+                <Link to="/signup">
+                  <Button className="bg-blue-600 hover:bg-blue-700">
+                    Sign Up
+                  </Button>
+                </Link>
               </>
             )}
           </div>
@@ -116,7 +118,9 @@ const Navigation = () => {
                     <Link to="/login">
                       <Button variant="ghost" className="justify-start w-full">Login</Button>
                     </Link>
-                    <Button className="bg-blue-600 hover:bg-blue-700 justify-start w-full">Sign Up</Button>
+                    <Link to="/signup">
+                      <Button className="bg-blue-600 hover:bg-blue-700 justify-start w-full">Sign Up</Button>
+                    </Link>
                   </>
                 )}
               </div>
