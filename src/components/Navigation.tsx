@@ -30,9 +30,6 @@ const Navigation = () => {
             <a href="#" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">
               Rent
             </a>
-            <a href="#" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">
-              Finance
-            </a>
             <Link to="/about" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">
               About
             </Link>
@@ -88,11 +85,10 @@ const Navigation = () => {
         {/* Mobile Menu */}
         {isMenuOpen && (
           <div className="md:hidden border-t border-gray-200 py-4">
-            <div className="flex flex-col space-y-4">
+          <div className="flex flex-col space-y-4">
               <a href="#" className="text-gray-700 hover:text-blue-600 font-medium">Buy</a>
               <a href="#" className="text-gray-700 hover:text-blue-600 font-medium">Sell</a>
               <a href="#" className="text-gray-700 hover:text-blue-600 font-medium">Rent</a>
-              <a href="#" className="text-gray-700 hover:text-blue-600 font-medium">Finance</a>
               <Link to="/about" className="text-gray-700 hover:text-blue-600 font-medium">About</Link>
               
               <div className="flex flex-col space-y-2 pt-4 border-t border-gray-200">
