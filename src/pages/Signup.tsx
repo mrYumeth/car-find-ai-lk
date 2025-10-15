@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Car, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,14 +7,19 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Link } from "react-router-dom";
 
-const Login = () => {
+const Signup = () => {
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
+    name: "",
     email: "",
-    password: ""
+    phone: "",
+    password: "",
+    confirmPassword: "",
+    userType: "buyer"
   });
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -24,7 +28,11 @@ const Login = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Login attempt:", formData);
+    if (formData.password !== formData.confirmPassword) {
+      alert("Passwords do not match!");
+      return;
+    }
+    console.log("Signup attempt:", formData);
   };
 
   return (
@@ -36,15 +44,28 @@ const Login = () => {
             <Car className="h-12 w-12 text-blue-600" />
             <span className="text-3xl font-bold text-gray-800">CarNeeds.lk</span>
           </div>
-          <p className="text-gray-600">Welcome back! Sign in to your account</p>
+          <p className="text-gray-600">Create your account to get started</p>
         </div>
 
         <Card className="shadow-xl">
           <CardHeader>
-            <CardTitle className="text-2xl font-bold text-center">Sign In</CardTitle>
+            <CardTitle className="text-2xl font-bold text-center">Sign Up</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input
+                  id="name"
+                  name="name"
+                  type="text"
+                  placeholder="Enter your full name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
                 <Input
@@ -59,13 +80,42 @@ const Login = () => {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="phone">Phone Number</Label>
+                <Input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  placeholder="07X XXX XXXX"
+                  value={formData.phone}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="userType">I want to</Label>
+                <select
+                  id="userType"
+                  name="userType"
+                  value={formData.userType}
+                  onChange={handleInputChange}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  required
+                >
+                  <option value="buyer">Buy/Rent a Vehicle</option>
+                  <option value="seller">Sell/Rent out a Vehicle</option>
+                  <option value="both">Both</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
                   <Input
                     id="password"
                     name="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
+                    placeholder="Create a password"
                     value={formData.password}
                     onChange={handleInputChange}
                     required
@@ -86,18 +136,36 @@ const Login = () => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <label className="flex items-center space-x-2">
-                  <input type="checkbox" className="rounded border-gray-300" />
-                  <span className="text-sm text-gray-600">Remember me</span>
-                </label>
-                <a href="#" className="text-sm text-blue-600 hover:underline">
-                  Forgot password?
-                </a>
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <div className="relative">
+                  <Input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="Confirm your password"
+                    value={formData.confirmPassword}
+                    onChange={handleInputChange}
+                    required
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-4 w-4 text-gray-400" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-gray-400" />
+                    )}
+                  </Button>
+                </div>
               </div>
 
               <Button type="submit" className="w-full h-12 bg-blue-600 hover:bg-blue-700">
-                Sign In
+                Create Account
               </Button>
             </form>
 
@@ -124,9 +192,9 @@ const Login = () => {
 
             <div className="text-center">
               <p className="text-gray-600">
-                Don't have an account?{" "}
-                <Link to="/signup" className="text-blue-600 font-semibold hover:underline">
-                  Sign up now
+                Already have an account?{" "}
+                <Link to="/login" className="text-blue-600 font-semibold hover:underline">
+                  Sign in
                 </Link>
               </p>
             </div>
@@ -134,7 +202,7 @@ const Login = () => {
         </Card>
 
         <div className="text-center mt-6 text-sm text-gray-500">
-          By signing in, you agree to our{" "}
+          By signing up, you agree to our{" "}
           <a href="#" className="text-blue-600 hover:underline">Terms of Service</a>{" "}
           and{" "}
           <a href="#" className="text-blue-600 hover:underline">Privacy Policy</a>
@@ -144,4 +212,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default Signup;
