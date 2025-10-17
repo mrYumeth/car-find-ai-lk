@@ -39,21 +39,25 @@ const Navigation = () => {
           <div className="hidden md:flex items-center space-x-4">
             {isLoggedIn ? (
               <>
-                <Button variant="ghost" className="relative">
-                  <MessageCircle className="h-5 w-5" />
-                  <Badge className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 flex items-center justify-center bg-orange-500">
-                    3
-                  </Badge>
-                </Button>
+                <Link to="/chat">
+                  <Button variant="ghost" className="relative">
+                    <MessageCircle className="h-5 w-5" />
+                    <Badge className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 flex items-center justify-center bg-orange-500">
+                      3
+                    </Badge>
+                  </Button>
+                </Link>
                 <Link to="/post-vehicle">
                   <Button className="bg-orange-500 hover:bg-orange-600">
                     <Plus className="h-4 w-4 mr-2" />
                     Post Vehicle
                   </Button>
                 </Link>
-                <Button variant="ghost">
-                  <User className="h-5 w-5" />
-                </Button>
+                <Link to="/profile">
+                  <Button variant="ghost">
+                    <User className="h-5 w-5" />
+                  </Button>
+                </Link>
               </>
             ) : (
               <>

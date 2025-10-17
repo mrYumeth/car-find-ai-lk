@@ -10,6 +10,12 @@ import Signup from "./pages/Signup";
 import PostVehicle from "./pages/PostVehicle";
 import VehicleDetail from "./pages/VehicleDetail";
 import About from "./pages/About";
+import Dashboard from "./pages/Dashboard";
+import Chat from "./pages/Chat";
+import Profile from "./pages/Profile";
+import AIRecommendations from "./pages/AIRecommendations";
+import AdminDashboard from "./pages/AdminDashboard";
+import ReportListing from "./pages/ReportListing";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +33,12 @@ const App = () => (
           <Route path="/post-vehicle" element={<PostVehicle />} />
           <Route path="/vehicle/:id" element={<VehicleDetail />} />
           <Route path="/about" element={<About />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/chat" element={<Chat />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/recommendations" element={<AIRecommendations />} />
+          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/report" element={<ReportListing />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
