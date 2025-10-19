@@ -26,13 +26,46 @@ const Signup = () => {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
       alert("Passwords do not match!");
       return;
     }
-    console.log("Signup attempt:", formData);
+
+    try {
+      const response = await fetch('http://localhost:3001/api/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        console.log("Signup successful:", data);
+        alert("Signup successful! You can now log in.");
+        
+        // --- ADD THIS LINE TO CLEAR THE FORM ---
+        setFormData({
+          name: "",
+          email: "",
+          phone: "",
+          password: "",
+          confirmPassword: "",
+          userType: "buyer"
+        });
+        
+      } else {
+        console.error("Signup failed:", data);
+        alert(`Signup failed: ${data}`);
+      }
+    } catch (error) {
+      console.error("An error occurred during signup:", error);
+      alert("An error occurred. Please make sure your backend server is running.");
+    }
   };
 
   return (

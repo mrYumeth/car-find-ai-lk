@@ -1,7 +1,6 @@
-
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Car, MessageCircle, Heart, Eye, Edit, Trash2, Plus, TrendingUp } from "lucide-react";
+import { Car, MessageCircle, Heart, Eye, Edit, Trash2, Plus, TrendingUp, Key } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -83,12 +82,20 @@ const Dashboard = () => {
               <h1 className="text-4xl font-bold text-gray-800 mb-2">My Dashboard</h1>
               <p className="text-gray-600">Manage your listings and account</p>
             </div>
-            <Link to="/post-vehicle">
-              <Button className="bg-orange-500 hover:bg-orange-600 mt-4 md:mt-0">
-                <Plus className="h-4 w-4 mr-2" />
-                Post New Vehicle
-              </Button>
-            </Link>
+            <div className="flex gap-4 mt-4 md:mt-0">
+              <Link to="/post-vehicle">
+                <Button className="bg-green-600 hover:bg-green-700">
+                  <Key className="h-4 w-4 mr-2" />
+                  Rent My Car
+                </Button>
+              </Link>
+              <Link to="/post-vehicle">
+                <Button className="bg-orange-500 hover:bg-orange-600">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Post New Vehicle
+                </Button>
+              </Link>
+            </div>
           </div>
 
           {/* Stats Cards */}

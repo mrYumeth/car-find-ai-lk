@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -15,6 +16,8 @@ const Login = () => {
     password: ""
   });
 
+  const navigate = useNavigate(); // <-- Add this line
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
@@ -22,9 +25,49 @@ const Login = () => {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Login attempt:", formData);
+
+    try {
+      const response = await fetch('http://localhost:3001/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || "Login failed");
+      }
+
+      const { token, role } = await response.json();
+
+      // You can save the token for future authenticated requests
+      localStorage.setItem('token', token);
+      console.log("Login successful, role:", role);
+      alert("Login successful!");
+
+      // Route user based on their role
+      switch (role) {
+        case 'admin':
+          navigate('/admin');
+          break;
+        case 'seller':
+          navigate('/dashboard'); // Sellers go to the main dashboard
+          break;
+        case 'buyer':
+          navigate('/'); // Buyers go to the home page
+          break;
+        default:
+          navigate('/'); // Default fallback
+      }
+
+    } catch (error) {
+      console.error("An error occurred during login:", error);
+      alert("Login failed: " + (error as Error).message);
+    }
   };
 
   return (
