@@ -16,7 +16,7 @@ const About = () => {
             About CarNeeds.lk
           </h1>
           <p className="text-xl md:text-2xl mb-8 max-w-3xl mx-auto animate-slide-up">
-            Sri Lanka's Premier Vehicle Marketplace - Connecting Buyers and Sellers Since 2024
+            Sri Lanka's Premier Vehicle Marketplace - Connecting Buyers and Sellers Since 2020
           </p>
         </div>
       </section>
@@ -129,7 +129,7 @@ const About = () => {
                   <MapPin className="h-12 w-12 text-blue-600 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold mb-2">Address</h3>
                   <p className="text-gray-600">
-                    123 Main Street<br />
+                    65/A, Main Street<br />
                     Colombo 03<br />
                     Sri Lanka
                   </p>
@@ -176,7 +176,7 @@ const About = () => {
             <span className="text-2xl font-bold">CarNeeds.lk</span>
           </div>
           <p className="text-gray-400">
-            © 2024 CarNeeds.lk. All rights reserved. | Your trusted vehicle marketplace in Sri Lanka.
+            © 2025 CarNeeds.lk. All rights reserved. | Your trusted vehicle marketplace in Sri Lanka.
           </p>
         </div>
       </footer>

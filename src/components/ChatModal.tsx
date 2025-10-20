@@ -1,16 +1,15 @@
-
-import { useState, useRef, useEffect } from "react";
-import { X, Send, Paperclip, Smile } from "lucide-react";
+import { useState, useRef, useEffect, ReactNode } from "react";
+import { X, Send, Paperclip, Smile, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 interface ChatModalProps {
-  isOpen: boolean;
-  onClose: () => void;
   sellerName: string;
   vehicleTitle: string;
+  sellerContact: string; // NEW: Prop to display contact information
+  children: ReactNode; // NEW: Required for the DialogTrigger pattern
 }
 
 interface Message {
@@ -20,7 +19,7 @@ interface Message {
   timestamp: string;
 }
 
-const ChatModal = ({ isOpen, onClose, sellerName, vehicleTitle }: ChatModalProps) => {
+const ChatModal = ({ sellerName, vehicleTitle, sellerContact, children }: ChatModalProps) => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -42,6 +41,7 @@ const ChatModal = ({ isOpen, onClose, sellerName, vehicleTitle }: ChatModalProps
       timestamp: '10:36 AM'
     }
   ]);
+  const [isOpen, setIsOpen] = useState(false); // Local state to manage Dialog visibility
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -50,8 +50,11 @@ const ChatModal = ({ isOpen, onClose, sellerName, vehicleTitle }: ChatModalProps
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    // Only scroll when the modal is open
+    if (isOpen) {
+        scrollToBottom();
+    }
+  }, [messages, isOpen]);
 
   const handleSendMessage = () => {
     if (message.trim()) {
@@ -84,7 +87,12 @@ const ChatModal = ({ isOpen, onClose, sellerName, vehicleTitle }: ChatModalProps
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      {/* The children prop is passed to DialogTrigger to serve as the button that opens the modal */}
+      <DialogTrigger asChild>
+        {children}
+      </DialogTrigger>
+      
       <DialogContent className="max-w-md h-[600px] p-0 flex flex-col">
         {/* Header */}
         <DialogHeader className="p-4 border-b bg-blue-600 text-white rounded-t-lg">
@@ -98,10 +106,10 @@ const ChatModal = ({ isOpen, onClose, sellerName, vehicleTitle }: ChatModalProps
               </Avatar>
               <div>
                 <DialogTitle className="text-white">{sellerName}</DialogTitle>
-                <p className="text-blue-100 text-sm">Usually responds quickly</p>
+                <p className="text-blue-100 text-sm">{sellerContact}</p> {/* Displaying Contact */}
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={onClose} className="text-white hover:bg-blue-700">
+            <Button variant="ghost" size="sm" onClick={() => setIsOpen(false)} className="text-white hover:bg-blue-700">
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -110,14 +118,15 @@ const ChatModal = ({ isOpen, onClose, sellerName, vehicleTitle }: ChatModalProps
         {/* Vehicle Info */}
         <div className="p-3 bg-gray-50 border-b">
           <div className="flex items-center gap-3">
+            {/* The image is a placeholder, you might want to pass the real image URL here */}
             <img
-              src="/placeholder.svg"
+              src="/placeholder.svg" 
               alt={vehicleTitle}
               className="w-12 h-8 object-cover rounded"
             />
             <div>
               <p className="font-medium text-sm">{vehicleTitle}</p>
-              <p className="text-blue-600 text-sm font-semibold">Rs. 4,500,000</p>
+              <p className="text-blue-600 text-sm font-semibold">Rs. 4,500,000</p> {/* Placeholder Price */}
             </div>
           </div>
         </div>

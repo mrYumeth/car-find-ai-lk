@@ -352,6 +352,42 @@ app.delete('/api/vehicles/:id', async (req, res) => {
     }
 });
 
+// --- FIX: ADDED MISSING PUBLIC VEHICLE LISTING ENDPOINT ---
+app.get('/api/vehicles', async (req, res) => {
+    try {
+        const vehiclesResult = await pool.query(
+            `SELECT 
+                v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.description, v.make, v.model, v.year,
+                u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email,
+                (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
+             FROM vehicles v
+             JOIN users u ON v.user_id = u.id
+             ORDER BY v.created_at DESC`
+        );
+
+        const vehicles = vehiclesResult.rows.map(row => ({
+            id: row.id,
+            title: row.title,
+            price: Number(row.price).toLocaleString(),
+            location: row.location,
+            mileage: row.mileage ? `${row.mileage.toLocaleString()} km` : 'N/A',
+            fuel: row.fuel,
+            image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg',
+            seller_name: row.seller_name,
+            seller_phone: row.seller_phone,
+            seller_email: row.seller_email,
+            is_rentable: row.is_rentable,
+            make: row.make,
+            rating: 4.5 
+        }));
+
+        res.json(vehicles);
+
+    } catch (err) {
+        console.error("Error fetching all vehicles:", err.message);
+        res.status(500).send("Server error when fetching vehicles.");
+    }
+});
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });

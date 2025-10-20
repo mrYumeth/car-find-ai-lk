@@ -1,51 +1,112 @@
-
-import { useState } from "react";
-import { Car, Search, Star, MapPin, Phone, MessageCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Car, Search, Star, MapPin, Phone, MessageCircle, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import Navigation from "@/components/Navigation";
 import VehicleCard from "@/components/VehicleCard";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "react-router-dom"; // Added Link import
+
+// Interface must match the data returned by the backend
+interface Vehicle {
+  id: number;
+  title: string;
+  price: string;
+  location: string;
+  mileage: string;
+  fuel: string;
+  image: string;
+  make: string; // Required for filtering
+  seller_name: string;
+  seller_phone: string;
+  seller_email: string;
+  rating: number;
+  is_rentable: boolean;
+}
 
 const Index = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  const featuredVehicles = [
-    {
-      id: 1,
-      title: "Toyota Prius 2019",
-      price: "4,500,000",
-      location: "Colombo",
-      mileage: "35,000 km",
-      fuel: "Hybrid",
-      image: "/placeholder.svg",
-      seller: "John Perera",
-      rating: 4.8
-    },
-    {
-      id: 2,
-      title: "Honda Vezel 2020",
-      price: "6,200,000",
-      location: "Kandy",
-      mileage: "28,000 km",
-      fuel: "Petrol",
-      image: "/placeholder.svg",
-      seller: "Priya Silva",
-      rating: 4.9
-    },
-    {
-      id: 3,
-      title: "Suzuki Alto 2018",
-      price: "2,800,000",
-      location: "Galle",
-      mileage: "45,000 km",
-      fuel: "Petrol",
-      image: "/placeholder.svg",
-      seller: "Kamal Fernando",
-      rating: 4.7
-    }
-  ];
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    setIsLoggedIn(!!token);
+
+    const fetchAllVehicles = async () => {
+      setLoading(true);
+      try {
+        // Include token if available (to get personalized content later)
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+        const response = await fetch('http://localhost:3001/api/vehicles', { headers });
+        
+        if (!response.ok) throw new Error('Failed to fetch vehicles');
+
+        const data: Vehicle[] = await response.json();
+        setVehicles(data);
+
+      } catch (error) {
+        console.error("Error fetching vehicles:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAllVehicles();
+  }, []);
+
+  const filteredVehicles = vehicles.filter(vehicle =>
+    vehicle.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    vehicle.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    vehicle.make?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  
+  const vehiclesForSale = filteredVehicles.filter(v => !v.is_rentable);
+  const vehiclesForRent = filteredVehicles.filter(v => v.is_rentable);
+
+  const renderVehicleList = (list: Vehicle[], title: string, subtitle: string, isRent: boolean) => {
+    return (
+        <>
+            <div className="text-center mb-10">
+                <h2 className="text-3xl font-bold text-gray-800 mb-2">{title}</h2>
+                <p className="text-gray-600">{subtitle}</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+            {loading ? (
+                // Skeleton Loading state
+                Array(4).fill(0).map((_, index) => (
+                    <Card key={index} className="overflow-hidden">
+                        <Skeleton className="w-full h-48" />
+                        <CardContent className="p-4 space-y-2">
+                            <Skeleton className="h-5 w-3/4" />
+                            <Skeleton className="h-4 w-1/2" />
+                            <div className="flex justify-between mt-2">
+                                <Skeleton className="h-8 w-1/3" />
+                                <Skeleton className="h-8 w-1/3" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                ))
+            ) : list.length > 0 ? (
+                // Display loaded vehicles
+                list.map((vehicle) => (
+                    <VehicleCard key={vehicle.id} vehicle={vehicle} isLoggedIn={isLoggedIn} />
+                ))
+            ) : (
+                // Empty state
+                <div className="lg:col-span-4 text-center py-20">
+                    <Car className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-xl text-gray-600">No {isRent ? 'rentals' : 'sales'} found matching your criteria.</p>
+                </div>
+            )}
+            </div>
+        </>
+    );
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50">
@@ -56,7 +117,7 @@ const Index = () => {
         <div className="absolute inset-0 bg-black/20"></div>
         <div className="relative container mx-auto px-4 py-20">
           <div className="max-w-4xl mx-auto text-center">
-            <h1 className="text-5xl font-bold mb-6 animate-fade-in">
+            <h1 className="text-5xl font-bold mb-6">
               Find Your Perfect Vehicle in Sri Lanka
             </h1>
             <p className="text-xl mb-8 opacity-90">
@@ -64,7 +125,7 @@ const Index = () => {
             </p>
             
             {/* Search Bar */}
-            <div className="bg-white rounded-lg p-6 shadow-2xl max-w-2xl mx-auto">
+            <Card className="bg-white p-6 shadow-2xl max-w-2xl mx-auto">
               <div className="flex gap-4">
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
@@ -77,6 +138,9 @@ const Index = () => {
                 </div>
                 <Button className="h-12 px-8 bg-orange-500 hover:bg-orange-600">
                   Search
+                </Button>
+                <Button variant="outline" className="h-12 px-4 bg-white text-gray-700 hover:bg-gray-100">
+                    <SlidersHorizontal className="h-5 w-5" />
                 </Button>
               </div>
               
@@ -103,7 +167,7 @@ const Index = () => {
                   <option>Over 10M</option>
                 </select>
               </div>
-            </div>
+            </Card>
           </div>
         </div>
       </div>
@@ -138,22 +202,28 @@ const Index = () => {
         </div>
       </div>
 
-      {/* Featured Vehicles */}
+      {/* --- Dynamic Vehicle Listings (Restored Featured Section) --- */}
       <div className="container mx-auto px-4 py-12">
-        <div className="text-center mb-12">
-          <h2 className="text-4xl font-bold text-gray-800 mb-4">Featured Vehicles</h2>
-          <p className="text-gray-600 text-lg">Handpicked premium vehicles from trusted sellers</p>
-        </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {featuredVehicles.map((vehicle) => (
-            <VehicleCard key={vehicle.id} vehicle={vehicle} />
-          ))}
-        </div>
-        
+        {/* Render Sales Listings */}
+        {renderVehicleList(
+            vehiclesForSale, 
+            "Vehicles For Sale", 
+            "Buy the perfect car from our wide selection.",
+            false
+        )}
+
+        {/* Render Rental Listings */}
+        {renderVehicleList(
+            vehiclesForRent, 
+            "Vehicles For Rent", 
+            "Find short-term or long-term rentals for your travel needs.",
+            true
+        )}
+
         <div className="text-center mt-12">
           <Button className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-lg">
-            View All Vehicles
+            View All Listings
           </Button>
         </div>
       </div>
@@ -258,7 +328,7 @@ const Index = () => {
           </div>
           
           <div className="border-t border-gray-700 mt-12 pt-8 text-center text-gray-400">
-            <p>&copy; 2024 CarNeeds.lk. All rights reserved.</p>
+            <p>&copy; 2025 CarNeeds.lk. All rights reserved.</p>
           </div>
         </div>
       </footer>
