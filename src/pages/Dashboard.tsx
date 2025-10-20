@@ -127,11 +127,12 @@ const Dashboard = () => {
                   <div className="space-y-4">
                     {myListings.length > 0 ? myListings.map((listing) => (
                       <div key={listing.id} className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50">
-                        <img
-                          src={listing.image || "/placeholder.svg"}
-                          alt={listing.title}
-                          className="w-20 h-16 object-cover rounded"
-                        />
+                      <img
+                        // --- THIS IS THE CHANGE ---
+                        src={`http://localhost:3001${listing.image}`}
+                        alt={listing.title}
+                        className="w-20 h-16 object-cover rounded"
+                      />
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <h3 className="text-lg font-semibold">{listing.title}</h3>

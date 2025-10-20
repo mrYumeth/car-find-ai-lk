@@ -3,16 +3,37 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const port = 3001;
 
 // --- IMPORTANT: Define your JWT secret key in one place ---
-const JWT_SECRET = 'your_super_secret_and_long_jwt_key'; // Use a strong, consistent secret
+const JWT_SECRET = 'your_super_secret_and_long_jwt_key'; 
 
-// Middleware
+// --- MIDDLEWARE ---
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+
+// --- MULTER SETUP FOR FILE UPLOADS ---
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dir = 'server/public/uploads/';
+    // Create the directory if it doesn't exist to prevent errors
+    if (!fs.existsSync(dir)){
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
+});
+const upload = multer({ storage: storage });
 
 // Connect to your PostgreSQL database
 const pool = new Pool({
@@ -21,6 +42,15 @@ const pool = new Pool({
   database: 'carneeds', // Make sure this matches your DB name
   password: 'YumeBoy', // Replace with your PostgreSQL password
   port: 5432,
+});
+
+// NEW: Endpoint to handle image uploads
+app.post('/api/upload', upload.array('images', 8), (req, res) => {
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).send('No files were uploaded.');
+    }
+    const fileUrls = req.files.map(file => `/uploads/${file.filename}`);
+    res.json({ urls: fileUrls });
 });
 
 // --- SIGNUP ENDPOINT ---
@@ -135,56 +165,48 @@ app.put('/api/profile', async (req, res) => {
   }
 });
 
-// --- UPDATED ENDPOINT TO POST A VEHICLE ---
+// Post a New Vehicle
 app.post('/api/vehicles', async (req, res) => {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return res.status(401).send("Authorization header missing");
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.id;
-
-    const { title, description, make, model, year, condition, price, mileage, fuel_type, transmission, location, is_rentable, images } = req.body;
-
-    // --- FIX: Safely parse numeric fields, defaulting to null if empty or invalid ---
-    const parsedYear = parseInt(year, 10) || null;
-    const parsedPrice = parseFloat(price) || null;
-    const parsedMileage = parseInt(mileage, 10) || null;
-
-    const client = await pool.connect();
     try {
-        await client.query('BEGIN');
+        const token = req.headers.authorization?.split(" ")[1];
+        if (!token) return res.status(401).send("Authorization header missing");
 
-        const vehicleResult = await client.query(
-            `INSERT INTO vehicles (user_id, title, description, make, model, year, condition, price, mileage, fuel_type, transmission, location, is_rentable) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
-            // Use the parsed numeric values
-            [userId, title, description, make, model, parsedYear, condition, parsedPrice, parsedMileage, fuel_type, transmission, location, is_rentable]
-        );
-        const vehicleId = vehicleResult.rows[0].id;
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+        const { title, description, make, model, year, condition, price, mileage, fuel_type, transmission, location, is_rentable, images } = req.body;
 
-        if (images && images.length > 0) {
-            for (const imageUrl of images) {
-                await client.query(
-                    'INSERT INTO vehicle_images (vehicle_id, image_url) VALUES ($1, $2)',
-                    [vehicleId, imageUrl]
-                );
+        const parsedYear = parseInt(year, 10) || null;
+        const parsedPrice = parseFloat(price) || null;
+        const parsedMileage = parseInt(mileage, 10) || null;
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const vehicleResult = await client.query(
+                `INSERT INTO vehicles (user_id, title, description, make, model, year, condition, price, mileage, fuel_type, transmission, location, is_rentable) 
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+                [userId, title, description, make, model, parsedYear, condition, parsedPrice, parsedMileage, fuel_type, transmission, location, is_rentable]
+            );
+            const vehicleId = vehicleResult.rows[0].id;
+
+            if (images && images.length > 0) {
+                for (const imageUrl of images) {
+                    await client.query('INSERT INTO vehicle_images (vehicle_id, image_url) VALUES ($1, $2)', [vehicleId, imageUrl]);
+                }
             }
+            await client.query('COMMIT');
+            res.status(201).json({ message: "Vehicle posted successfully", vehicleId });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
         }
-
-        await client.query('COMMIT');
-        res.status(201).json({ message: "Vehicle posted successfully", vehicleId });
-    } catch (e) {
-        await client.query('ROLLBACK');
-        throw e;
-    } finally {
-        client.release();
+    } catch (err) {
+        console.error(err.message);
+        if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
+        res.status(500).send("Server error");
     }
-  } catch (err) {
-    console.error(err.message);
-    if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
-    res.status(500).send("Server error");
-  }
 });
 
 // --- NEW ENDPOINT TO GET A USER'S OWN VEHICLES ---
@@ -196,7 +218,6 @@ app.get('/api/my-vehicles', async (req, res) => {
         const decoded = jwt.verify(token, JWT_SECRET);
         const userId = decoded.id;
 
-        // Query to get vehicles and the first associated image for each
         const vehiclesResult = await pool.query(
             `SELECT v.*, (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) as image
              FROM vehicles v
@@ -206,7 +227,6 @@ app.get('/api/my-vehicles', async (req, res) => {
         );
 
         res.json(vehiclesResult.rows);
-
     } catch (err) {
         console.error(err.message);
         if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");

@@ -57,15 +57,40 @@ const handleSubmit = async (e: React.FormEvent) => {
         toast({ title: "Error", description: "You must be logged in to post.", variant: "destructive" });
         return;
     }
+    
+    let uploadedImageUrls: string[] = [];
 
-    // --- FIX: Send the actual image preview URLs to the backend ---
-    // We'll send the first preview URL as the main image for the dashboard.
-    const imageUrls = imagePreviews.length > 0 ? [imagePreviews[0]] : [];
+    // Step 1: Upload the actual image files to the server
+    if (images.length > 0) {
+        const imageFormData = new FormData();
+        images.forEach(image => {
+            imageFormData.append('images', image);
+        });
 
+        try {
+            const uploadResponse = await fetch('http://localhost:3001/api/upload', {
+                method: 'POST',
+                body: imageFormData,
+                // Do NOT set a 'Content-Type' header, the browser handles it for FormData
+            });
+
+            if (!uploadResponse.ok) throw new Error("Image upload failed");
+            
+            const uploadResult = await uploadResponse.json();
+            uploadedImageUrls = uploadResult.urls; // These are the permanent URLs from the server
+
+        } catch (error) {
+            console.error("Error uploading images:", error);
+            toast({ title: "Error", description: "Could not upload images.", variant: "destructive" });
+            return; // Stop the submission if images fail to upload
+        }
+    }
+
+    // Step 2: Submit the rest of the form data with the new permanent image URLs
     const submissionData = {
         ...formData,
         is_rentable: isRentable,
-        images: imageUrls, // Send the array of preview URLs
+        images: uploadedImageUrls,
     };
 
     try {
@@ -81,12 +106,12 @@ const handleSubmit = async (e: React.FormEvent) => {
         if (!response.ok) throw new Error("Failed to post vehicle. Please check all fields.");
 
         toast({ title: "Success!", description: "Your vehicle has been posted successfully." });
-        navigate('/dashboard'); // Redirect to dashboard
+        navigate('/dashboard');
     } catch (error) {
         console.error("Error posting vehicle:", error);
         toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
     }
-  };
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50">
