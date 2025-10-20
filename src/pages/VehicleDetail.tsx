@@ -59,9 +59,14 @@ const VehicleDetail = () => {
                 }
                 const data: VehicleDetails = await response.json();
                 setVehicle(data);
-                setMainImage(data.images[0] || "/placeholder.svg"); // Set the first image as the main one
+                
+                // FIX: Ensure the main image URL is constructed correctly immediately
+                const firstImageUrl = data.images[0] ? `http://localhost:3001${data.images[0]}` : "/placeholder.svg";
+                setMainImage(firstImageUrl);
             } catch (error) {
-                toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+                // Showing error details here helps with debugging
+                console.error("Error fetching vehicle details:", error);
+                toast({ title: "Error", description: `Could not load listing: ${(error as Error).message}`, variant: "destructive" });
             } finally {
                 setLoading(false);
             }
@@ -101,6 +106,9 @@ const VehicleDetail = () => {
     const { seller } = vehicle;
     const primaryContact = seller.phone || seller.email || 'N/A';
 
+    // Helper function to handle thumbnail click and image URL conversion
+    const getFullImageUrl = (imgUrl: string) => `http://localhost:3001${imgUrl}`;
+
     return (
         <div className="min-h-screen bg-gray-50">
             <Navigation />
@@ -127,15 +135,18 @@ const VehicleDetail = () => {
                         
                         {/* Thumbnails */}
                         <div className="grid grid-cols-5 gap-3">
-                            {vehicle.images.map((imgUrl, index) => (
-                                <img
-                                    key={index}
-                                    src={imgUrl}
-                                    alt={`Thumbnail ${index + 1}`}
-                                    className={`w-full h-16 object-cover rounded-lg cursor-pointer transition-all ${mainImage === imgUrl ? 'border-4 border-blue-600' : 'border border-gray-300'}`}
-                                    onClick={() => setMainImage(imgUrl)}
-                                />
-                            ))}
+                            {vehicle.images.map((imgUrl, index) => {
+                                const fullUrl = getFullImageUrl(imgUrl);
+                                return (
+                                    <img
+                                        key={index}
+                                        src={fullUrl}
+                                        alt={`Thumbnail ${index + 1}`}
+                                        className={`w-full h-16 object-cover rounded-lg cursor-pointer transition-all ${mainImage === fullUrl ? 'border-4 border-blue-600' : 'border border-gray-300'}`}
+                                        onClick={() => setMainImage(fullUrl)}
+                                    />
+                                );
+                            })}
                         </div>
 
                         {/* Vehicle Info Card */}
