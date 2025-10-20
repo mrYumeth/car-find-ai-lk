@@ -128,7 +128,6 @@ const Dashboard = () => {
                     {myListings.length > 0 ? myListings.map((listing) => (
                       <div key={listing.id} className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50">
                       <img
-                        // --- THIS IS THE CHANGE ---
                         src={`http://localhost:3001${listing.image}`}
                         alt={listing.title}
                         className="w-20 h-16 object-cover rounded"

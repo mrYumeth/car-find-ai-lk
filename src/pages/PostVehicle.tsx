@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Car, Upload, Plus, X } from "lucide-react";
+import { Car, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,12 +10,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import Navigation from "@/components/Navigation";
 import { useToast } from "@/hooks/use-toast";
 
+// Comprehensive list of car makes
+const carMakes = [
+  "Acura", "Alfa Romeo", "Aston Martin", "Audi", "Bentley", "BMW", "Bugatti", "Buick",
+  "Cadillac", "Chevrolet", "Chrysler", "Citroen", "Dodge", "Ferrari", "Fiat", "Ford",
+  "Genesis", "GMC", "Honda", "Hyundai", "Infiniti", "Jaguar", "Jeep", "Kia", "Lamborghini",
+  "Land Rover", "Lexus", "Lincoln", "Lotus", "Maserati", "Mazda", "McLaren", "Mercedes-Benz",
+  "Mini", "Mitsubishi", "Nissan", "Pagani", "Peugeot", "Porsche", "Ram", "Renault",
+  "Rolls-Royce", "Subaru", "Suzuki", "Tesla", "Toyota", "Volkswagen", "Volvo"
+];
+
 const PostVehicle = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
   
-  // Determine if it's a rental post from the state passed via the Link component
   const isRentable = location.state?.isRentable || false;
 
   const [formData, setFormData] = useState({
@@ -36,10 +45,8 @@ const PostVehicle = () => {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files);
-      const newImages = [...images, ...filesArray].slice(0, 8); // Limit to 8 images
+      const newImages = [...images, ...filesArray].slice(0, 8);
       setImages(newImages);
-
-      // Create blob URLs for previews
       const newPreviews = newImages.map(file => URL.createObjectURL(file));
       setImagePreviews(newPreviews);
     }
@@ -50,7 +57,7 @@ const PostVehicle = () => {
     setImagePreviews(currentPreviews => currentPreviews.filter((_, i) => i !== index));
   };
 
-const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const token = localStorage.getItem('token');
     if (!token) {
@@ -60,7 +67,6 @@ const handleSubmit = async (e: React.FormEvent) => {
     
     let uploadedImageUrls: string[] = [];
 
-    // Step 1: Upload the actual image files to the server
     if (images.length > 0) {
         const imageFormData = new FormData();
         images.forEach(image => {
@@ -71,22 +77,20 @@ const handleSubmit = async (e: React.FormEvent) => {
             const uploadResponse = await fetch('http://localhost:3001/api/upload', {
                 method: 'POST',
                 body: imageFormData,
-                // Do NOT set a 'Content-Type' header, the browser handles it for FormData
             });
 
             if (!uploadResponse.ok) throw new Error("Image upload failed");
             
             const uploadResult = await uploadResponse.json();
-            uploadedImageUrls = uploadResult.urls; // These are the permanent URLs from the server
+            uploadedImageUrls = uploadResult.urls;
 
         } catch (error) {
             console.error("Error uploading images:", error);
             toast({ title: "Error", description: "Could not upload images.", variant: "destructive" });
-            return; // Stop the submission if images fail to upload
+            return;
         }
     }
 
-    // Step 2: Submit the rest of the form data with the new permanent image URLs
     const submissionData = {
         ...formData,
         is_rentable: isRentable,
@@ -111,7 +115,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         console.error("Error posting vehicle:", error);
         toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
     }
-};
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50">
@@ -132,7 +136,6 @@ const handleSubmit = async (e: React.FormEvent) => {
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-6">
                 
-                {/* Vehicle Title & Price */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                         <Label htmlFor="title">Ad Title</Label>
@@ -144,15 +147,18 @@ const handleSubmit = async (e: React.FormEvent) => {
                     </div>
                 </div>
 
-                {/* Make, Model, Year */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="make">Make</Label>
-                    <Select name="make" onValueChange={(value) => handleSelectChange("make", value)}><SelectTrigger><SelectValue placeholder="Select make" /></SelectTrigger><SelectContent>
-                        <SelectItem value="Toyota">Toyota</SelectItem>
-                        <SelectItem value="Honda">Honda</SelectItem>
-                        {/* Add other makes */}
-                    </SelectContent></Select>
+                    <Select name="make" onValueChange={(value) => handleSelectChange("make", value)}>
+                      <SelectTrigger><SelectValue placeholder="Select make" /></SelectTrigger>
+                      <SelectContent>
+                        {/* Map over the carMakes array to create dropdown items */}
+                        {carMakes.sort().map((make) => (
+                          <SelectItem key={make} value={make}>{make}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="model">Model</Label>
@@ -164,8 +170,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   </div>
                 </div>
 
-                {/* Mileage, Fuel, Transmission */}
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="space-y-2">
                       <Label htmlFor="mileage">Mileage (km)</Label>
                       <Input id="mileage" name="mileage" type="number" onChange={handleInputChange} required />
@@ -188,7 +193,6 @@ const handleSubmit = async (e: React.FormEvent) => {
                     </div>
                 </div>
                 
-                {/* Condition & Location */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                         <Label htmlFor="condition">Condition</Label>
@@ -204,13 +208,11 @@ const handleSubmit = async (e: React.FormEvent) => {
                     </div>
                 </div>
 
-                {/* Description */}
                 <div className="space-y-2">
                     <Label htmlFor="description">Description</Label>
                     <Textarea id="description" name="description" onChange={handleInputChange} rows={5} required />
                 </div>
 
-                {/* Image Upload */}
                 <div className="space-y-4">
                   <Label>Vehicle Images (up to 8)</Label>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
