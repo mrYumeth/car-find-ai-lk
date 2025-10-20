@@ -17,6 +17,7 @@ import AIRecommendations from "./pages/AIRecommendations";
 import AdminDashboard from "./pages/AdminDashboard";
 import ReportListing from "./pages/ReportListing";
 import NotFound from "./pages/NotFound";
+import EditVehicle from "./pages/EditVehicle";
 
 const queryClient = new QueryClient();
 
@@ -39,6 +40,7 @@ const App = () => (
           <Route path="/recommendations" element={<AIRecommendations />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/report" element={<ReportListing />} />
+          <Route path="/edit-vehicle/:id" element={<EditVehicle />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

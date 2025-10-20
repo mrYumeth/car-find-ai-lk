@@ -202,6 +202,156 @@ app.get('/api/my-vehicles', async (req, res) => {
     }
 });
 
+// --- NEW ENDPOINT TO GET A SINGLE VEHICLE FOR EDITING ---
+app.get('/api/vehicles/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const token = req.headers.authorization?.split(" ")[1];
+        if (!token) return res.status(401).send("Authorization header missing");
+        
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+
+        // Fetch vehicle and its images, ensuring the user owns it
+        const vehicleResult = await pool.query(
+            `SELECT * FROM vehicles WHERE id = $1 AND user_id = $2`,
+            [id, userId]
+        );
+
+        if (vehicleResult.rows.length === 0) {
+            return res.status(404).send("Vehicle not found or you don't have permission to edit it.");
+        }
+
+        const imagesResult = await pool.query(
+            `SELECT id, image_url FROM vehicle_images WHERE vehicle_id = $1`,
+            [id]
+        );
+
+        const vehicleData = {
+            ...vehicleResult.rows[0],
+            images: imagesResult.rows,
+        };
+        
+        res.json(vehicleData);
+
+    } catch (err) {
+        console.error(err.message);
+        if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
+        res.status(500).send("Server error");
+    }
+});
+
+// --- UPDATED ENDPOINT TO UPDATE A VEHICLE (Handles Images) ---
+app.put('/api/vehicles/:id', async (req, res) => {
+    const client = await pool.connect(); // Use a client for transaction
+    try {
+        const { id } = req.params;
+        const token = req.headers.authorization?.split(" ")[1];
+        if (!token) return res.status(401).send("Authorization header missing");
+        
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+
+        // Get all fields including the final list of image URLs
+        const { title, description, make, model, year, condition, price, mileage, fuel_type, transmission, location, images } = req.body;
+
+        const parsedYear = parseInt(year, 10) || null;
+        const parsedPrice = parseFloat(price) || null;
+        const parsedMileage = parseInt(mileage, 10) || null;
+
+        await client.query('BEGIN'); // Start transaction
+
+        // 1. Update the main vehicle details
+        const result = await client.query(
+            `UPDATE vehicles 
+             SET title = $1, description = $2, make = $3, model = $4, year = $5, condition = $6, price = $7, mileage = $8, fuel_type = $9, transmission = $10, location = $11
+             WHERE id = $12 AND user_id = $13 RETURNING *`,
+            [title, description, make, model, parsedYear, condition, parsedPrice, parsedMileage, fuel_type, transmission, location, id, userId]
+        );
+
+        if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).send("Vehicle not found or you don't have permission to update it.");
+        }
+        
+        // 2. Delete existing images that are NOT in the submitted 'images' array
+        //    (We only delete if the 'images' array is provided in the request)
+        if (images !== undefined) { // Check if images array was sent
+            // Construct the placeholders for the WHERE NOT IN clause
+            const placeholders = images.map((_, i) => `$${i + 2}`).join(',');
+            await client.query(
+                `DELETE FROM vehicle_images WHERE vehicle_id = $1 AND image_url NOT IN (${placeholders || 'NULL'})`,
+                [id, ...images]
+            );
+        }
+
+        // 3. Add new images (check if they already exist to avoid duplicates)
+        if (images && images.length > 0) {
+            for (const imageUrl of images) {
+                // Check if this image URL already exists for this vehicle
+                const exists = await client.query(
+                    'SELECT 1 FROM vehicle_images WHERE vehicle_id = $1 AND image_url = $2',
+                    [id, imageUrl]
+                );
+                // If it doesn't exist, insert it
+                if (exists.rows.length === 0) {
+                    await client.query(
+                        'INSERT INTO vehicle_images (vehicle_id, image_url) VALUES ($1, $2)',
+                        [id, imageUrl]
+                    );
+                }
+            }
+        } else if (images !== undefined && images.length === 0) {
+             // If an empty images array is sent, delete all existing images
+             await client.query('DELETE FROM vehicle_images WHERE vehicle_id = $1', [id]);
+        }
+        // If images array is undefined, don't touch existing images
+
+        await client.query('COMMIT'); // Commit transaction
+        
+        res.json({ message: "Vehicle updated successfully", vehicle: result.rows[0] });
+
+    } catch (err) {
+        await client.query('ROLLBACK'); // Rollback on any error
+        console.error("Error updating vehicle:", err.message);
+        if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
+        res.status(500).send("Server error");
+    } finally {
+        client.release(); // Release client connection
+    }
+});
+
+
+// --- NEW ENDPOINT TO DELETE A VEHICLE ---
+app.delete('/api/vehicles/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const token = req.headers.authorization?.split(" ")[1];
+        if (!token) return res.status(401).send("Authorization header missing");
+        
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+
+        // The ON DELETE CASCADE in your database schema will handle deleting associated images.
+        const result = await pool.query(
+            "DELETE FROM vehicles WHERE id = $1 AND user_id = $2",
+            [id, userId]
+        );
+        
+        // rowCount will be 0 if no row was found (or user didn't have permission)
+        if (result.rowCount === 0) {
+            return res.status(404).send("Vehicle not found or you don't have permission to delete it.");
+        }
+
+        res.status(200).json({ message: "Vehicle deleted successfully" });
+
+    } catch (err) {
+        console.error(err.message);
+        if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
+        res.status(500).send("Server error");
+    }
+});
+
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
