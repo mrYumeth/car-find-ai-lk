@@ -30,6 +30,7 @@ interface VehicleDetails {
     rating: number;
     views: number;
     seller: {
+        id: number; // Required for chat functionality
         name: string;
         phone: string;
         email: string;
@@ -60,11 +61,10 @@ const VehicleDetail = () => {
                 const data: VehicleDetails = await response.json();
                 setVehicle(data);
                 
-                // FIX: Ensure the main image URL is constructed correctly immediately
+                // Ensure the main image URL is constructed correctly immediately
                 const firstImageUrl = data.images[0] ? `http://localhost:3001${data.images[0]}` : "/placeholder.svg";
                 setMainImage(firstImageUrl);
             } catch (error) {
-                // Showing error details here helps with debugging
                 console.error("Error fetching vehicle details:", error);
                 toast({ title: "Error", description: `Could not load listing: ${(error as Error).message}`, variant: "destructive" });
             } finally {
@@ -105,6 +105,10 @@ const VehicleDetail = () => {
 
     const { seller } = vehicle;
     const primaryContact = seller.phone || seller.email || 'N/A';
+
+    // --- FIX: DECLARE MISSING VARIABLES HERE ---
+    const receiverId = seller.id;
+    const vehicleId = vehicle.id;
 
     // Helper function to handle thumbnail click and image URL conversion
     const getFullImageUrl = (imgUrl: string) => `http://localhost:3001${imgUrl}`;
@@ -222,6 +226,8 @@ const VehicleDetail = () => {
                                         sellerName={seller.name}
                                         vehicleTitle={vehicle.title}
                                         sellerContact={seller.phone || seller.email}
+                                        initialReceiverId={receiverId}
+                                        initialVehicleId={vehicleId}
                                     >
                                         <Button className="w-full bg-orange-500 hover:bg-orange-600">
                                             <MessageCircle className="h-5 w-5 mr-2" /> Message Seller
@@ -233,7 +239,7 @@ const VehicleDetail = () => {
                                             Login to Message Seller
                                         </Button>
                                     </Link>
-                                )}
+                                )}      
                             </CardContent>
                         </Card>
                         

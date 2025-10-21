@@ -217,9 +217,9 @@ app.get('/api/vehicles', async (req, res) => {
         const vehicles = vehiclesResult.rows.map(row => ({
             id: row.id,
             title: row.title,
-            price: Number(row.price).toLocaleString(),
+            price: row.price ? Number(row.price).toLocaleString() : 'N/A', // FIX: Safe price conversion
             location: row.location,
-            mileage: row.mileage ? `${row.mileage.toLocaleString()} km` : 'N/A',
+            mileage: row.mileage ? `${row.mileage.toLocaleString()} km` : 'N/A', // FIX: Safe mileage conversion
             fuel: row.fuel,
             image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg',
             make: row.make,
@@ -234,7 +234,8 @@ app.get('/api/vehicles', async (req, res) => {
 
     } catch (err) {
         console.error("Error fetching all vehicles:", err.message);
-        res.status(500).send("Server error when fetching vehicles.");
+        // This is a common point of failure. Increased error visibility.
+        res.status(500).send("Server error when fetching vehicles: " + err.message);
     }
 });
 
@@ -244,7 +245,7 @@ app.get('/api/vehicles/:id', async (req, res) => {
     try {
         const { id } = req.params;
         
-        // --- FIX: REMOVED ALL TOKEN CHECKS FOR PUBLIC ACCESS ---
+        // FIX: Removed token check for public access (This endpoint is correctly public)
         
         // 1. Fetch main vehicle and seller details
         const vehicleResult = await pool.query(
@@ -253,7 +254,8 @@ app.get('/api/vehicles/:id', async (req, res) => {
                 u.username AS seller_name, 
                 u.phone AS seller_phone, 
                 u.email AS seller_email,
-                u.role AS seller_role
+                u.role AS seller_role,
+                u.id AS seller_id -- FIX: Ensure seller ID is available for ChatModal initialization
              FROM vehicles v
              JOIN users u ON v.user_id = u.id
              WHERE v.id = $1`,
@@ -291,13 +293,14 @@ app.get('/api/vehicles/:id', async (req, res) => {
             
             // Seller Details
             seller: {
+                id: vehicle.seller_id, // FIX: Added seller ID
                 name: vehicle.seller_name,
                 phone: vehicle.seller_phone,
                 email: vehicle.seller_email,
                 role: vehicle.seller_role,
             },
             
-            // Image URLs (return relative path, frontend constructs full URL)
+            // Image URLs (relative path)
             images: imagesResult.rows.map(row => row.image_url),
             
             rating: 4.5,
@@ -308,7 +311,7 @@ app.get('/api/vehicles/:id', async (req, res) => {
 
     } catch (err) {
         console.error("Error fetching vehicle details:", err.message);
-        res.status(500).send("Server error when fetching vehicle details.");
+        res.status(500).send("Server error when fetching vehicle details: " + err.message);
     }
 });
 
@@ -411,6 +414,7 @@ app.delete('/api/vehicles/:id', async (req, res) => {
         res.status(500).send("Server error");
     }
 });
+
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
