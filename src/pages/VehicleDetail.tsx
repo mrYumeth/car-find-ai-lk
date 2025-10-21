@@ -30,7 +30,7 @@ interface VehicleDetails {
     rating: number;
     views: number;
     seller: {
-        id: number; // Required for chat functionality
+        id: number; // This is required for chat
         name: string;
         phone: string;
         email: string;
@@ -61,7 +61,6 @@ const VehicleDetail = () => {
                 const data: VehicleDetails = await response.json();
                 setVehicle(data);
                 
-                // Ensure the main image URL is constructed correctly immediately
                 const firstImageUrl = data.images[0] ? `http://localhost:3001${data.images[0]}` : "/placeholder.svg";
                 setMainImage(firstImageUrl);
             } catch (error) {
@@ -107,7 +106,7 @@ const VehicleDetail = () => {
     const primaryContact = seller.phone || seller.email || 'N/A';
 
     // --- FIX: DECLARE MISSING VARIABLES HERE ---
-    const receiverId = seller.id;
+    const receiverId = vehicle.seller.id;
     const vehicleId = vehicle.id;
 
     // Helper function to handle thumbnail click and image URL conversion
@@ -225,7 +224,7 @@ const VehicleDetail = () => {
                                     <ChatModal 
                                         sellerName={seller.name}
                                         vehicleTitle={vehicle.title}
-                                        sellerContact={seller.phone || seller.email}
+                                        sellerContact={primaryContact}
                                         initialReceiverId={receiverId}
                                         initialVehicleId={vehicleId}
                                     >

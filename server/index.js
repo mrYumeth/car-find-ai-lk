@@ -41,6 +41,20 @@ const pool = new Pool({
   port: 5432,
 });
 
+// Helper function to verify JWT and get user ID
+const authenticateToken = (req, res, next) => {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).send("Authorization header missing");
+    
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded; // Attach user payload to the request
+        next();
+    } catch (err) {
+        return res.status(403).send("Invalid token");
+    }
+};
+
 // --- API ENDPOINTS ---
 
 // Upload Image
@@ -98,32 +112,26 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Profile save data
-app.get('/api/profile', async (req, res) => {
+// Profile save data (Authenticated)
+app.get('/api/profile', authenticateToken, async (req, res) => {
     try {
-      const token = req.headers.authorization?.split(" ")[1];
-      if (!token) return res.status(401).send("Authorization header missing");
-      const decoded = jwt.verify(token, JWT_SECRET);
+      const userId = req.user.id;
       const userResult = await pool.query(
         "SELECT id, username, email, phone, role, created_at FROM users WHERE id = $1", 
-        [decoded.id]
+        [userId]
       );
       if (userResult.rows.length === 0) return res.status(404).send("User not found");
       res.json(userResult.rows[0]);
     } catch (err) {
       console.error(err.message);
-      if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
       res.status(500).send("Server error");
     }
 });
 
-// Profile get data
-app.put('/api/profile', async (req, res) => {
+// Profile update data (Authenticated)
+app.put('/api/profile', authenticateToken, async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return res.status(401).send("Authorization header missing");
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.id;
+    const userId = req.user.id;
     const { username, email, phone } = req.body;
     const updatedUser = await pool.query(
       "UPDATE users SET username = $1, email = $2, phone = $3 WHERE id = $4 RETURNING id, username, email, phone, role",
@@ -133,19 +141,15 @@ app.put('/api/profile', async (req, res) => {
     res.json(updatedUser.rows[0]);
   } catch (err) {
     console.error(err.message);
-    if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
     if (err.code === '23505') return res.status(409).send("Email or username already in use.");
     res.status(500).send("Server error");
   }
 });
 
-// Post vehicles
-app.post('/api/vehicles', async (req, res) => {
+// Post vehicles (Authenticated)
+app.post('/api/vehicles', authenticateToken, async (req, res) => {
     try {
-        const token = req.headers.authorization?.split(" ")[1];
-        if (!token) return res.status(401).send("Authorization header missing");
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const userId = decoded.id;
+        const userId = req.user.id;
         const { title, description, make, model, year, condition, price, mileage, fuel_type, transmission, location, is_rentable, images } = req.body;
         const parsedYear = parseInt(year, 10) || null;
         const parsedPrice = parseFloat(price) || null;
@@ -179,13 +183,10 @@ app.post('/api/vehicles', async (req, res) => {
     }
 });
 
-// Get posted vehicles (Seller Dashboard)
-app.get('/api/my-vehicles', async (req, res) => {
+// Get posted vehicles (Seller Dashboard - Authenticated)
+app.get('/api/my-vehicles', authenticateToken, async (req, res) => {
     try {
-        const token = req.headers.authorization?.split(" ")[1];
-        if (!token) return res.status(401).send("Authorization header missing");
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const userId = decoded.id;
+        const userId = req.user.id;
         const vehiclesResult = await pool.query(
             `SELECT v.*, (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) as image
              FROM vehicles v
@@ -196,18 +197,17 @@ app.get('/api/my-vehicles', async (req, res) => {
         res.json(vehiclesResult.rows);
     } catch (err) {
         console.error(err.message);
-        if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
         res.status(500).send("Server error");
     }
 });
 
-// Get ALL public vehicles (Homepage)
+// Get ALL public vehicles (Homepage - Public)
 app.get('/api/vehicles', async (req, res) => {
     try {
         const vehiclesResult = await pool.query(
             `SELECT 
-                v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.description, v.make, v.model, v.year,
-                u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email,
+                v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.description, v.make,
+                u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
                 (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
              FROM vehicles v
              JOIN users u ON v.user_id = u.id
@@ -217,37 +217,32 @@ app.get('/api/vehicles', async (req, res) => {
         const vehicles = vehiclesResult.rows.map(row => ({
             id: row.id,
             title: row.title,
-            price: row.price ? Number(row.price).toLocaleString() : 'N/A', // FIX: Safe price conversion
+            price: row.price ? Number(row.price).toLocaleString() : 'N/A',
             location: row.location,
-            mileage: row.mileage ? `${row.mileage.toLocaleString()} km` : 'N/A', // FIX: Safe mileage conversion
+            mileage: row.mileage ? `${row.mileage.toLocaleString()} km` : 'N/A',
             fuel: row.fuel,
             image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg',
             make: row.make,
             seller_name: row.seller_name,
             seller_phone: row.seller_phone,
             seller_email: row.seller_email,
+            seller_id: row.seller_id, // Pass seller ID
             is_rentable: row.is_rentable,
             rating: 4.5 
         }));
-
         res.json(vehicles);
-
     } catch (err) {
         console.error("Error fetching all vehicles:", err.message);
-        // This is a common point of failure. Increased error visibility.
         res.status(500).send("Server error when fetching vehicles: " + err.message);
     }
 });
 
 
-// Get single vehicle (Details Page - NOW PUBLIC)
+// Get single vehicle (Details Page - Public)
 app.get('/api/vehicles/:id', async (req, res) => {
     try {
         const { id } = req.params;
         
-        // FIX: Removed token check for public access (This endpoint is correctly public)
-        
-        // 1. Fetch main vehicle and seller details
         const vehicleResult = await pool.query(
             `SELECT 
                 v.*, 
@@ -255,7 +250,7 @@ app.get('/api/vehicles/:id', async (req, res) => {
                 u.phone AS seller_phone, 
                 u.email AS seller_email,
                 u.role AS seller_role,
-                u.id AS seller_id -- FIX: Ensure seller ID is available for ChatModal initialization
+                u.id AS seller_id
              FROM vehicles v
              JOIN users u ON v.user_id = u.id
              WHERE v.id = $1`,
@@ -265,16 +260,13 @@ app.get('/api/vehicles/:id', async (req, res) => {
         if (vehicleResult.rows.length === 0) {
             return res.status(404).send("Vehicle not found.");
         }
-
         const vehicle = vehicleResult.rows[0];
 
-        // 2. Fetch all associated images
         const imagesResult = await pool.query(
             `SELECT id, image_url FROM vehicle_images WHERE vehicle_id = $1 ORDER BY id ASC`,
             [id]
         );
 
-        // 3. Assemble final data object
         const vehicleData = {
             id: vehicle.id,
             title: vehicle.title,
@@ -290,25 +282,18 @@ app.get('/api/vehicles/:id', async (req, res) => {
             location: vehicle.location,
             is_rentable: vehicle.is_rentable,
             created_at: vehicle.created_at,
-            
-            // Seller Details
             seller: {
-                id: vehicle.seller_id, // FIX: Added seller ID
+                id: vehicle.seller_id,
                 name: vehicle.seller_name,
                 phone: vehicle.seller_phone,
                 email: vehicle.seller_email,
                 role: vehicle.seller_role,
             },
-            
-            // Image URLs (relative path)
-            images: imagesResult.rows.map(row => row.image_url),
-            
+            images: imagesResult.rows.map(row => row.image_url), // Relative paths
             rating: 4.5,
             views: 120,
         };
-        
         res.json(vehicleData);
-
     } catch (err) {
         console.error("Error fetching vehicle details:", err.message);
         res.status(500).send("Server error when fetching vehicle details: " + err.message);
@@ -316,37 +301,27 @@ app.get('/api/vehicles/:id', async (req, res) => {
 });
 
 
-// Update a vehicle (Edit/Update)
-app.put('/api/vehicles/:id', async (req, res) => {
+// Update a vehicle (Edit/Update - Authenticated)
+app.put('/api/vehicles/:id', authenticateToken, async (req, res) => {
     const client = await pool.connect(); 
     try {
         const { id } = req.params;
-        const token = req.headers.authorization?.split(" ")[1];
-        if (!token) return res.status(401).send("Authorization header missing");
-        
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const userId = decoded.id;
-
+        const userId = req.user.id;
         const { title, description, make, model, year, condition, price, mileage, fuel_type, transmission, location, images } = req.body;
-
         const parsedYear = parseInt(year, 10) || null;
         const parsedPrice = parseFloat(price) || null;
         const parsedMileage = parseInt(mileage, 10) || null;
-
         await client.query('BEGIN'); 
-
-        const result = await pool.query(
+        const result = await client.query(
             `UPDATE vehicles 
              SET title = $1, description = $2, make = $3, model = $4, year = $5, condition = $6, price = $7, mileage = $8, fuel_type = $9, transmission = $10, location = $11
              WHERE id = $12 AND user_id = $13 RETURNING *`,
             [title, description, make, model, parsedYear, condition, parsedPrice, parsedMileage, fuel_type, transmission, location, id, userId]
         );
-
         if (result.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).send("Vehicle not found or you don't have permission to update it.");
         }
-        
         if (images !== undefined) { 
             const placeholders = images.map((_, i) => `$${i + 2}`).join(',');
             await client.query(
@@ -354,67 +329,151 @@ app.put('/api/vehicles/:id', async (req, res) => {
                 [id, ...images]
             );
         }
-
         if (images && images.length > 0) {
             for (const imageUrl of images) {
-                const exists = await client.query(
-                    'SELECT 1 FROM vehicle_images WHERE vehicle_id = $1 AND image_url = $2',
-                    [id, imageUrl]
-                );
+                const exists = await client.query('SELECT 1 FROM vehicle_images WHERE vehicle_id = $1 AND image_url = $2', [id, imageUrl]);
                 if (exists.rows.length === 0) {
-                    await client.query(
-                        'INSERT INTO vehicle_images (vehicle_id, image_url) VALUES ($1, $2)',
-                        [id, imageUrl]
-                    );
+                    await client.query('INSERT INTO vehicle_images (vehicle_id, image_url) VALUES ($1, $2)', [id, imageUrl]);
                 }
             }
         } else if (images !== undefined && images.length === 0) {
              await client.query('DELETE FROM vehicle_images WHERE vehicle_id = $1', [id]);
         }
-
         await client.query('COMMIT'); 
-        
         res.json({ message: "Vehicle updated successfully", vehicle: result.rows[0] });
-
     } catch (err) {
         await client.query('ROLLBACK'); 
         console.error("Error updating vehicle:", err.message);
-        if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
         res.status(500).send("Server error");
     } finally {
         client.release(); 
     }
 });
 
-
-// Delete a vehicle
-app.delete('/api/vehicles/:id', async (req, res) => {
+// Delete a vehicle (Authenticated)
+app.delete('/api/vehicles/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const token = req.headers.authorization?.split(" ")[1];
-        if (!token) return res.status(401).send("Authorization header missing");
-        
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const userId = decoded.id;
-
-        const result = await pool.query(
-            "DELETE FROM vehicles WHERE id = $1 AND user_id = $2",
-            [id, userId]
-        );
-        
+        const userId = req.user.id;
+        const result = await pool.query("DELETE FROM vehicles WHERE id = $1 AND user_id = $2", [id, userId]);
         if (result.rowCount === 0) {
             return res.status(404).send("Vehicle not found or you don't have permission to delete it.");
         }
-
         res.status(200).json({ message: "Vehicle deleted successfully" });
-
     } catch (err) {
         console.error(err.message);
-        if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
         res.status(500).send("Server error");
     }
 });
 
+// --- CHAT ENDPOINTS ---
+
+app.get('/api/chats', authenticateToken, async (req, res) => {
+    const userId = req.user.id;
+    try {
+        const chatsResult = await pool.query(
+            `SELECT 
+                c.id, c.vehicle_id, c.created_at,
+                v.title AS vehicle_title,
+                CASE WHEN c.buyer_id = $1 THEN s.username ELSE b.username END AS other_user_name,
+                CASE WHEN c.buyer_id = $1 THEN s.id ELSE b.id END AS other_user_id,
+                (SELECT message FROM messages WHERE chat_id = c.id ORDER BY sent_at DESC LIMIT 1) AS last_message
+             FROM chats c
+             JOIN users b ON c.buyer_id = b.id
+             JOIN users s ON c.seller_id = s.id
+             JOIN vehicles v ON c.vehicle_id = v.id
+             WHERE c.buyer_id = $1 OR c.seller_id = $1
+             ORDER BY c.created_at DESC`,
+            [userId]
+        );
+        res.json(chatsResult.rows);
+    } catch (err) {
+        console.error("Error fetching chats:", err.message);
+        res.status(500).send("Server error fetching chats");
+    }
+});
+
+app.post('/api/chats/message', authenticateToken, async (req, res) => {
+    const senderId = req.user.id;
+    const { message, receiverId, vehicleId, chatId } = req.body;
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        let currentChatId = chatId;
+
+        if (!currentChatId) {
+            const vehicleResult = await client.query('SELECT user_id FROM vehicles WHERE id = $1', [vehicleId]);
+            if (vehicleResult.rows.length === 0) throw new Error("Vehicle not found.");
+            
+            const sellerId = vehicleResult.rows[0].user_id;
+            
+            // Check if sender is trying to message themselves
+            if (senderId === sellerId) {
+                throw new Error("Sellers cannot message themselves on their own listings.");
+            }
+            
+            // The sender is the buyer
+            const buyerId = senderId;
+
+            const existingChat = await client.query(
+                'SELECT id FROM chats WHERE vehicle_id = $1 AND buyer_id = $2 AND seller_id = $3',
+                [vehicleId, buyerId, sellerId]
+            );
+
+            if (existingChat.rows.length > 0) {
+                currentChatId = existingChat.rows[0].id;
+            } else {
+                const newChat = await client.query(
+                    'INSERT INTO chats (buyer_id, seller_id, vehicle_id) VALUES ($1, $2, $3) RETURNING id',
+                    [buyerId, sellerId, vehicleId]
+                );
+                currentChatId = newChat.rows[0].id;
+            }
+        }
+
+        const messageResult = await client.query(
+            'INSERT INTO messages (chat_id, sender_id, message) VALUES ($1, $2, $3) RETURNING *',
+            [currentChatId, senderId, message]
+        );
+
+        await client.query('COMMIT');
+        res.status(201).json({ chatId: currentChatId, message: messageResult.rows[0] });
+
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error("Error sending message:", e.message);
+        res.status(500).send("Server error sending message: " + e.message);
+    } finally {
+        client.release();
+    }
+});
+
+app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
+    const { chatId } = req.params;
+    const userId = req.user.id;
+    try {
+        const chatCheck = await pool.query('SELECT * FROM chats WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [chatId, userId]);
+        if (chatCheck.rows.length === 0) return res.status(403).send("Access denied.");
+
+        const messagesResult = await pool.query(
+            'SELECT id, message, sender_id, sent_at FROM messages WHERE chat_id = $1 ORDER BY sent_at ASC',
+            [chatId]
+        );
+        
+        const messages = messagesResult.rows.map(msg => ({
+            id: msg.id,
+            text: msg.message,
+            sender: msg.sender_id === userId ? 'user' : 'other',
+            timestamp: new Date(msg.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }));
+
+        res.json({ messages, vehicleId: chatCheck.rows[0].vehicle_id });
+    } catch (err) {
+        console.error("Error fetching messages:", err.message);
+        res.status(500).send("Server error fetching messages");
+    }
+});
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
