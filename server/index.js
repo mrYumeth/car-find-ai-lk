@@ -112,7 +112,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Profile save data (Authenticated)
+// Profile get data
 app.get('/api/profile', authenticateToken, async (req, res) => {
     try {
       const userId = req.user.id;
@@ -128,7 +128,7 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
     }
 });
 
-// Profile update data (Authenticated)
+// Profile update data
 app.put('/api/profile', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -146,7 +146,7 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// Post vehicles (Authenticated)
+// Post vehicles
 app.post('/api/vehicles', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
@@ -178,12 +178,11 @@ app.post('/api/vehicles', authenticateToken, async (req, res) => {
         }
     } catch (err) {
         console.error(err.message);
-        if (err.name === 'JsonWebTokenError') return res.status(403).send("Invalid token");
         res.status(500).send("Server error");
     }
 });
 
-// Get posted vehicles (Seller Dashboard - Authenticated)
+// Get posted vehicles (Seller Dashboard)
 app.get('/api/my-vehicles', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
@@ -201,7 +200,7 @@ app.get('/api/my-vehicles', authenticateToken, async (req, res) => {
     }
 });
 
-// Get ALL public vehicles (Homepage - Public)
+// Get ALL public vehicles (Homepage)
 app.get('/api/vehicles', async (req, res) => {
     try {
         const vehiclesResult = await pool.query(
@@ -223,10 +222,10 @@ app.get('/api/vehicles', async (req, res) => {
             fuel: row.fuel,
             image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg',
             make: row.make,
+            seller_id: row.seller_id,
             seller_name: row.seller_name,
             seller_phone: row.seller_phone,
             seller_email: row.seller_email,
-            seller_id: row.seller_id, // Pass seller ID
             is_rentable: row.is_rentable,
             rating: 4.5 
         }));
@@ -237,6 +236,38 @@ app.get('/api/vehicles', async (req, res) => {
     }
 });
 
+// Get single vehicle for (Edit Page - Authenticated)
+app.get('/api/edit-vehicle/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.id;
+
+        const vehicleResult = await pool.query(
+            `SELECT * FROM vehicles WHERE id = $1 AND user_id = $2`,
+            [id, userId]
+        );
+
+        if (vehicleResult.rows.length === 0) {
+            return res.status(404).send("Vehicle not found or you don't have permission to edit it.");
+        }
+
+        const imagesResult = await pool.query(
+            `SELECT id, image_url FROM vehicle_images WHERE vehicle_id = $1`,
+            [id]
+        );
+
+        const vehicleData = {
+            ...vehicleResult.rows[0],
+            images: imagesResult.rows,
+        };
+        
+        res.json(vehicleData);
+
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send("Server error");
+    }
+});
 
 // Get single vehicle (Details Page - Public)
 app.get('/api/vehicles/:id', async (req, res) => {
@@ -246,11 +277,11 @@ app.get('/api/vehicles/:id', async (req, res) => {
         const vehicleResult = await pool.query(
             `SELECT 
                 v.*, 
+                u.id AS seller_id, 
                 u.username AS seller_name, 
                 u.phone AS seller_phone, 
                 u.email AS seller_email,
-                u.role AS seller_role,
-                u.id AS seller_id
+                u.role AS seller_role
              FROM vehicles v
              JOIN users u ON v.user_id = u.id
              WHERE v.id = $1`,
@@ -289,7 +320,7 @@ app.get('/api/vehicles/:id', async (req, res) => {
                 email: vehicle.seller_email,
                 role: vehicle.seller_role,
             },
-            images: imagesResult.rows.map(row => row.image_url), // Relative paths
+            images: imagesResult.rows.map(row => row.image_url),
             rating: 4.5,
             views: 120,
         };
@@ -300,8 +331,7 @@ app.get('/api/vehicles/:id', async (req, res) => {
     }
 });
 
-
-// Update a vehicle (Edit/Update - Authenticated)
+// Update a vehicle
 app.put('/api/vehicles/:id', authenticateToken, async (req, res) => {
     const client = await pool.connect(); 
     try {
@@ -350,7 +380,7 @@ app.put('/api/vehicles/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// Delete a vehicle (Authenticated)
+// Delete a vehicle
 app.delete('/api/vehicles/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -368,6 +398,7 @@ app.delete('/api/vehicles/:id', authenticateToken, async (req, res) => {
 
 // --- CHAT ENDPOINTS ---
 
+// GET: Fetch all active conversations (UPDATED FOR UNREAD COUNT)
 app.get('/api/chats', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     try {
@@ -377,7 +408,14 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
                 v.title AS vehicle_title,
                 CASE WHEN c.buyer_id = $1 THEN s.username ELSE b.username END AS other_user_name,
                 CASE WHEN c.buyer_id = $1 THEN s.id ELSE b.id END AS other_user_id,
-                (SELECT message FROM messages WHERE chat_id = c.id ORDER BY sent_at DESC LIMIT 1) AS last_message
+                (SELECT message FROM messages WHERE chat_id = c.id ORDER BY sent_at DESC LIMIT 1) AS last_message,
+                
+                -- Count unread messages that were NOT sent by the current user
+                (SELECT COUNT(*) FROM messages m 
+                 WHERE m.chat_id = c.id 
+                 AND m.is_read = FALSE 
+                 AND m.sender_id != $1) AS unread_count
+
              FROM chats c
              JOIN users b ON c.buyer_id = b.id
              JOIN users s ON c.seller_id = s.id
@@ -393,6 +431,7 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
     }
 });
 
+// POST: Send a message, or start a new chat
 app.post('/api/chats/message', authenticateToken, async (req, res) => {
     const senderId = req.user.id;
     const { message, receiverId, vehicleId, chatId } = req.body;
@@ -408,12 +447,10 @@ app.post('/api/chats/message', authenticateToken, async (req, res) => {
             
             const sellerId = vehicleResult.rows[0].user_id;
             
-            // Check if sender is trying to message themselves
             if (senderId === sellerId) {
                 throw new Error("Sellers cannot message themselves on their own listings.");
             }
             
-            // The sender is the buyer
             const buyerId = senderId;
 
             const existingChat = await client.query(
@@ -449,6 +486,7 @@ app.post('/api/chats/message', authenticateToken, async (req, res) => {
     }
 });
 
+// GET: Fetch all messages for a specific chat
 app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
     const { chatId } = req.params;
     const userId = req.user.id;
@@ -474,6 +512,30 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
         res.status(500).send("Server error fetching messages");
     }
 });
+
+// --- NEW ENDPOINT TO MARK MESSAGES AS READ ---
+app.put('/api/chats/:chatId/read', authenticateToken, async (req, res) => {
+    const { chatId } = req.params;
+    const userId = req.user.id; // The user who is *reading* the messages
+
+    try {
+        // Mark all messages in this chat as read,
+        // EXCEPT for the ones sent by the current user
+        await pool.query(
+            `UPDATE messages 
+             SET is_read = TRUE 
+             WHERE chat_id = $1 
+             AND sender_id != $2 
+             AND is_read = FALSE`,
+            [chatId, userId]
+        );
+        res.status(200).json({ message: "Messages marked as read" });
+    } catch (err) {
+        console.error("Error marking messages as read:", err.message);
+        res.status(500).send("Server error");
+    }
+});
+
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);

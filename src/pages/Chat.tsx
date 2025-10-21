@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import ChatModal from '@/components/ChatModal';
+import { Badge } from '@/components/ui/badge'; // Import the Badge component
 
 interface ChatSummary {
   id: number;
@@ -16,6 +17,7 @@ interface ChatSummary {
   other_user_id: number;
   last_message: string;
   created_at: string;
+  unread_count: string; // From the COUNT(*) query, which returns a string
 }
 
 const ChatPage = () => {
@@ -26,6 +28,7 @@ const ChatPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  // This function is now used to refresh the list
   const fetchChats = async () => {
     setLoading(true);
     const token = localStorage.getItem('token');
@@ -49,16 +52,26 @@ const ChatPage = () => {
 
   useEffect(() => {
     fetchChats();
-  }, []);
+  }, []); // Only run on initial component mount
 
   const filteredChats = chats.filter(chat => 
     chat.other_user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     chat.vehicle_title.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
+  
   const handleChatClose = () => {
     setSelectedChat(null);
     fetchChats(); // Refresh chat list on close to show latest message
+  };
+
+  const handleSelectChat = (chat: ChatSummary) => {
+    setSelectedChat(chat);
+    // Optimistically set the unread count to 0 in the UI
+    setChats(prevChats => 
+        prevChats.map(c => 
+            c.id === chat.id ? { ...c, unread_count: "0" } : c
+        )
+    );
   };
 
   return (
@@ -76,13 +89,13 @@ const ChatPage = () => {
               <CardContent className="p-0 flex flex-col h-full">
                 <div className="p-4 border-b">
                   <div className="relative">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                     <Input 
                       placeholder="Search conversations..." 
                       value={searchTerm} 
                       onChange={(e) => setSearchTerm(e.target.value)} 
-                      className="pl-9"
+                      className="pl-8"
                     />
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                   </div>
                 </div>
                 
@@ -95,17 +108,25 @@ const ChatPage = () => {
                     filteredChats.map((chat) => (
                       <div 
                         key={chat.id}
-                        className={`flex items-center gap-3 p-4 border-b cursor-pointer hover:bg-gray-100 ${selectedChat?.id === chat.id ? 'bg-blue-50 border-blue-400 border-l-4' : ''}`}
-                        onClick={() => setSelectedChat(chat)}
+                        className={`flex items-center gap-3 p-4 border-b cursor-pointer hover:bg-gray-100 ${selectedChat?.id === chat.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''}`}
+                        onClick={() => handleSelectChat(chat)}
                       >
                         <Avatar>
                           <AvatarFallback className="bg-orange-500 text-white">{chat.other_user_name.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div className='flex-1 min-w-0'>
                           <p className="font-semibold truncate">{chat.other_user_name}</p>
-                          <p className="text-sm text-gray-500 truncate">{chat.last_message || `Regarding: ${chat.vehicle_title}`}</p>
+                          {/* Make last message bold if unread */}
+                          <p className={`text-sm truncate ${Number(chat.unread_count) > 0 ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
+                              {chat.last_message || `Regarding: ${chat.vehicle_title}`}
+                          </p>
                         </div>
-                        <span className='text-xs text-gray-400'>{new Date(chat.created_at).toLocaleDateString()}</span>
+                        {/* Show unread count badge */}
+                        {Number(chat.unread_count) > 0 && (
+                          <Badge className="bg-orange-500 text-white h-6 w-6 flex items-center justify-center p-0 rounded-full">
+                              {chat.unread_count}
+                          </Badge>
+                        )}
                       </div>
                     ))
                   )}
@@ -126,11 +147,10 @@ const ChatPage = () => {
                     sellerContact={"Viewed from Chat Hub"}
                     initialReceiverId={selectedChat.other_user_id}
                     initialVehicleId={selectedChat.vehicle_id}
-                    isOpen={true} // This makes it render as a window, not a pop-up
+                    isOpen={true} 
                     onClose={handleChatClose}
                     onMessageSent={fetchChats}
                   >
-                    {/* The ChatModal expects children; we provide a non-visible one */}
                     <div style={{ display: 'none' }} />
                   </ChatModal>
                 ) : (

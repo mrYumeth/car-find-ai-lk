@@ -16,24 +16,31 @@ interface Message {
 interface ChatModalProps {
   sellerName: string;
   vehicleTitle: string;
-  sellerContact: string; 
-  children?: ReactNode; // Make children optional for ChatPage usage
-  
-  // Props for chat identification
+  sellerContact: string;
+  children: ReactNode;
   initialChatId?: number | null; 
-  initialReceiverId?: number | null; 
-  initialVehicleId?: number | null; 
-  
-  // Props for controlling visibility and lifecycle from parent components (VehicleDetail/ChatPage)
+  initialReceiverId?: number | null;
+  initialVehicleId?: number | null;
   isOpen?: boolean;
   onClose?: () => void;
-  onMessageSent?: () => void; // New prop to sync the ChatPage list
+  onMessageSent?: () => void;
 }
 
-const ChatModal = ({ sellerName, vehicleTitle, sellerContact, children, initialChatId, initialReceiverId, initialVehicleId, isOpen: parentIsOpen, onClose: parentOnClose, onMessageSent }: ChatModalProps) => {
+const ChatModal = ({ 
+    sellerName, 
+    vehicleTitle, 
+    sellerContact, 
+    children, 
+    initialChatId, 
+    initialReceiverId, 
+    initialVehicleId, 
+    isOpen: parentIsOpen, 
+    onClose: parentOnClose,
+    onMessageSent
+}: ChatModalProps) => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [chatId, setChatId] = useState<number | null>(initialChatId || null);
   const [modalOpen, setModalOpen] = useState(parentIsOpen || false); 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -43,12 +50,30 @@ const ChatModal = ({ sellerName, vehicleTitle, sellerContact, children, initialC
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Effect to load messages when chat ID changes or modal opens
   useEffect(() => {
-    if (!chatId || !modalOpen) return;
+    if (!modalOpen) return;
+    
+    if (!chatId) {
+        setLoadingMessages(false);
+        setMessages([]); 
+        return;
+    }
     
     const token = localStorage.getItem('token');
     if (!token) return;
+
+const markAsRead = async () => {
+        try {
+            await fetch(`http://localhost:3001/api/chats/${chatId}/read`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            // --- FIX: This line was causing the infinite loop ---
+            // if (onMessageSent) onMessageSent(); // <--- REMOVED
+        } catch (err) {
+            console.error("Failed to mark as read", err);
+        }
+    };
 
     const fetchMessages = async () => {
         setLoadingMessages(true);
@@ -68,9 +93,9 @@ const ChatModal = ({ sellerName, vehicleTitle, sellerContact, children, initialC
     };
 
     fetchMessages();
-  }, [chatId, modalOpen, toast]); // Removed userId, it's safer to rely on the backend JWT
+    markAsRead();
+  }, [chatId, modalOpen, toast, onMessageSent]);
 
-  // Scroll to bottom whenever messages update
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
@@ -81,7 +106,6 @@ const ChatModal = ({ sellerName, vehicleTitle, sellerContact, children, initialC
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    // Local message update for immediate feedback
     const tempId = Date.now();
     const tempMessage: Message = {
       id: tempId,
@@ -110,20 +134,17 @@ const ChatModal = ({ sellerName, vehicleTitle, sellerContact, children, initialC
         if (!response.ok) throw new Error('Failed to send message');
         
         const data = await response.json();
-        setChatId(data.chatId); // Update local state with the new permanent chatId
+        setChatId(data.chatId); 
         
-        // Final action: Notify parent (ChatPage) that a message was sent so it can refresh the list
         if (onMessageSent) {
-            onMessageSent();
+            onMessageSent(); 
         }
         
-        // Update local messages array with the server ID
         setMessages(prev => prev.map(msg => msg.id === tempId ? { ...msg, id: data.message.id } : msg));
 
     } catch (error) {
         console.error("Error sending message:", error);
         toast({ title: "Send Failed", description: "Could not send message. Please try again.", variant: 'destructive' });
-        // Revert message if sending failed
         setMessages(prev => prev.filter(msg => msg.id !== tempId));
         setMessage(tempMessage.text);
     }
@@ -142,22 +163,18 @@ const ChatModal = ({ sellerName, vehicleTitle, sellerContact, children, initialC
     setModalOpen(open);
   };
 
-  // --- FIX: Conditional size classes applied here ---
   const modalSizeClasses = parentIsOpen 
-      ? "w-full h-full p-0 md:max-w-none md:p-0" // Full height/width for ChatPage view
-      : "max-w-md h-[600px]"; // Default pop-up size for VehicleDetail view
-
+      ? "w-full h-full p-0 md:max-w-none md:p-0"
+      : "max-w-md h-[600px]";
 
   return (
     <Dialog open={modalOpen} onOpenChange={handleOpenChange}>
-        {/* Render children only if NOT controlled by parent (VehicleDetail) */}
         {!parentIsOpen && <DialogTrigger asChild>{children}</DialogTrigger>}
 
         <DialogContent className={`${modalSizeClasses} flex flex-col`}>
             {/* Header */}
             <div className="p-4 border-b bg-blue-600 text-white rounded-t-lg flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    {/* ... Avatar and Seller Info ... */}
                     <Avatar className="h-10 w-10">
                         <AvatarFallback className="bg-blue-500 text-white">{sellerName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                     </Avatar>
@@ -166,12 +183,11 @@ const ChatModal = ({ sellerName, vehicleTitle, sellerContact, children, initialC
                         <p className="text-blue-100 text-sm">{sellerContact}</p>
                     </div>
                 </div>
-                {/* Close Button is only rendered if parent IS NOT controlling (i.e., when it's a small pop-up) */}
                 {!parentIsOpen && (
-                     <Button variant="ghost" size="sm" onClick={() => handleOpenChange(false)} className="text-white hover:bg-blue-700">
-                        <X className="h-4 w-4" />
-                    </Button>
-                )}
+              <Button variant="ghost" size="sm" onClick={() => handleOpenChange(false)} className="text-white hover:bg-blue-700">
+                    <X className="h-4 w-4" />
+              </Button>
+            )}
             </div>
 
             {/* Vehicle Info */}
