@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { Car, Search, Star, MapPin, Phone, MessageCircle, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import Navigation from "@/components/Navigation";
 import VehicleCard from "@/components/VehicleCard";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Link } from "react-router-dom"; // Added Link import
+import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
+import { Link } from "react-router-dom"; // Import Link
 
-// Interface must match the data returned by the backend
+// This interface must match the data from your /api/vehicles endpoint
 interface Vehicle {
   id: number;
   title: string;
@@ -17,32 +18,31 @@ interface Vehicle {
   mileage: string;
   fuel: string;
   image: string;
-  make: string; // Required for filtering
-  seller_name: string;
+  seller_name: string; // Use the correct prop from your API
+  seller_id: number;   // This is the new, crucial ID for chat
   seller_phone: string;
   seller_email: string;
   rating: number;
   is_rentable: boolean;
+  make: string; // Added for filtering
 }
 
 const Index = () => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]); // State for API data
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
+    // Check if user is logged in
     const token = localStorage.getItem('token');
     setIsLoggedIn(!!token);
 
+    // Fetch all vehicles from the backend
     const fetchAllVehicles = async () => {
       setLoading(true);
       try {
-        // Include token if available (to get personalized content later)
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-
-        const response = await fetch('http://localhost:3001/api/vehicles', { headers });
-        
+        const response = await fetch('http://localhost:3001/api/vehicles');
         if (!response.ok) throw new Error('Failed to fetch vehicles');
 
         const data: Vehicle[] = await response.json();
@@ -56,25 +56,27 @@ const Index = () => {
     };
 
     fetchAllVehicles();
-  }, []);
+  }, []); // Run once on component mount
 
+  // Filter vehicles based on search
   const filteredVehicles = vehicles.filter(vehicle =>
     vehicle.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     vehicle.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vehicle.make?.toLowerCase().includes(searchTerm.toLowerCase())
+    (vehicle.make && vehicle.make.toLowerCase().includes(searchTerm.toLowerCase()))
   );
   
   const vehiclesForSale = filteredVehicles.filter(v => !v.is_rentable);
   const vehiclesForRent = filteredVehicles.filter(v => v.is_rentable);
 
+  // Helper function to render vehicle lists (with loading skeletons)
   const renderVehicleList = (list: Vehicle[], title: string, subtitle: string, isRent: boolean) => {
     return (
-        <>
+        <div className="mb-16">
             <div className="text-center mb-10">
                 <h2 className="text-3xl font-bold text-gray-800 mb-2">{title}</h2>
                 <p className="text-gray-600">{subtitle}</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {loading ? (
                 // Skeleton Loading state
                 Array(4).fill(0).map((_, index) => (
@@ -83,30 +85,29 @@ const Index = () => {
                         <CardContent className="p-4 space-y-2">
                             <Skeleton className="h-5 w-3/4" />
                             <Skeleton className="h-4 w-1/2" />
-                            <div className="flex justify-between mt-2">
-                                <Skeleton className="h-8 w-1/3" />
-                                <Skeleton className="h-8 w-1/3" />
-                            </div>
                         </CardContent>
                     </Card>
                 ))
             ) : list.length > 0 ? (
                 // Display loaded vehicles
                 list.map((vehicle) => (
-                    <VehicleCard key={vehicle.id} vehicle={vehicle} isLoggedIn={isLoggedIn} />
+                    <VehicleCard 
+                        key={vehicle.id} 
+                        vehicle={vehicle} 
+                        isLoggedIn={isLoggedIn} // Pass login status to the card
+                    />
                 ))
             ) : (
                 // Empty state
                 <div className="lg:col-span-4 text-center py-20">
                     <Car className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-xl text-gray-600">No {isRent ? 'rentals' : 'sales'} found matching your criteria.</p>
+                    <p className="text-xl text-gray-600">No {isRent ? 'rentals' : 'sales'} found.</p>
                 </div>
             )}
             </div>
-        </>
+        </div>
     );
   };
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50">
@@ -117,7 +118,7 @@ const Index = () => {
         <div className="absolute inset-0 bg-black/20"></div>
         <div className="relative container mx-auto px-4 py-20">
           <div className="max-w-4xl mx-auto text-center">
-            <h1 className="text-5xl font-bold mb-6">
+            <h1 className="text-5xl font-bold mb-6 animate-fade-in">
               Find Your Perfect Vehicle in Sri Lanka
             </h1>
             <p className="text-xl mb-8 opacity-90">
@@ -139,7 +140,7 @@ const Index = () => {
                 <Button className="h-12 px-8 bg-orange-500 hover:bg-orange-600">
                   Search
                 </Button>
-                <Button variant="outline" className="h-12 px-4 bg-white text-gray-700 hover:bg-gray-100">
+                 <Button variant="outline" className="h-12 px-4 bg-white text-gray-700 hover:bg-gray-100">
                     <SlidersHorizontal className="h-5 w-5" />
                 </Button>
               </div>
@@ -202,7 +203,7 @@ const Index = () => {
         </div>
       </div>
 
-      {/* --- Dynamic Vehicle Listings (Restored Featured Section) --- */}
+      {/* --- Dynamic Vehicle Listings --- */}
       <div className="container mx-auto px-4 py-12">
         
         {/* Render Sales Listings */}
@@ -217,7 +218,7 @@ const Index = () => {
         {renderVehicleList(
             vehiclesForRent, 
             "Vehicles For Rent", 
-            "Find short-term or long-term rentals for your travel needs.",
+            "Find short-term rentals for your travel needs.",
             true
         )}
 
@@ -328,7 +329,7 @@ const Index = () => {
           </div>
           
           <div className="border-t border-gray-700 mt-12 pt-8 text-center text-gray-400">
-            <p>&copy; 2025 CarNeeds.lk. All rights reserved.</p>
+            <p>&copy; 2024 CarNeeds.lk. All rights reserved.</p>
           </div>
         </div>
       </footer>
