@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Search } from 'lucide-react';
+import { MessageCircle, Search, User, Car } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -151,6 +151,7 @@ const ChatPage = () => {
                     onClose={handleChatClose}
                     onMessageSent={fetchChats}
                   >
+                    {/* FIX: Supplying the required 'children' prop with an invisible placeholder */}
                     <div style={{ display: 'none' }} />
                   </ChatModal>
                 ) : (

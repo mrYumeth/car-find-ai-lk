@@ -431,6 +431,33 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
     }
 });
 
+// --- NEW ENDPOINT TO FIND A CHAT ---
+app.get('/api/chats/find', authenticateToken, async (req, res) => {
+    const userId = req.user.id; // This is the buyer
+    const { vehicleId, sellerId } = req.query;
+
+    if (!vehicleId || !sellerId) {
+        return res.status(400).send("Missing vehicleId or sellerId");
+    }
+
+    try {
+        const existingChat = await pool.query(
+            'SELECT id FROM chats WHERE vehicle_id = $1 AND buyer_id = $2 AND seller_id = $3',
+            [vehicleId, userId, sellerId]
+        );
+
+        if (existingChat.rows.length > 0) {
+            res.json({ chatId: existingChat.rows[0].id });
+        } else {
+            // No chat found, which is fine. The first message will create it.
+            res.status(404).send("No existing chat found.");
+        }
+    } catch (err) {
+        console.error("Error finding chat:", err.message);
+        res.status(500).send("Server error");
+    }
+});
+
 // POST: Send a message, or start a new chat
 app.post('/api/chats/message', authenticateToken, async (req, res) => {
     const senderId = req.user.id;

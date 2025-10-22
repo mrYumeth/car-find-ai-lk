@@ -17,7 +17,7 @@ interface ChatModalProps {
   sellerName: string;
   vehicleTitle: string;
   sellerContact: string;
-  children: ReactNode;
+  children?: ReactNode; // Made optional
   initialChatId?: number | null; 
   initialReceiverId?: number | null;
   initialVehicleId?: number | null;
@@ -40,11 +40,18 @@ const ChatModal = ({
 }: ChatModalProps) => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(true);
   const [chatId, setChatId] = useState<number | null>(initialChatId || null);
   const [modalOpen, setModalOpen] = useState(parentIsOpen || false); 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    // Sync modal state if controlled by parent
+    if (parentIsOpen !== undefined) {
+      setModalOpen(parentIsOpen);
+    }
+  }, [parentIsOpen]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -53,37 +60,32 @@ const ChatModal = ({
   useEffect(() => {
     if (!modalOpen) return;
     
-    if (!chatId) {
-        setLoadingMessages(false);
-        setMessages([]); 
-        return;
-    }
-    
     const token = localStorage.getItem('token');
     if (!token) return;
 
-const markAsRead = async () => {
-        try {
-            await fetch(`http://localhost:3001/api/chats/${chatId}/read`, {
-                method: 'PUT',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            // --- FIX: This line was causing the infinite loop ---
-            // if (onMessageSent) onMessageSent(); // <--- REMOVED
-        } catch (err) {
-            console.error("Failed to mark as read", err);
-        }
-    };
+    const markAsRead = async (currentChatId: number) => {
+        try {
+            await fetch(`http://localhost:3001/api/chats/${currentChatId}/read`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            // --- FIX: THIS LINE CAUSED THE INFINITE LOOP ---
+            // if (onMessageSent) onMessageSent(); // <--- REMOVED
+        } catch (err) {
+            console.error("Failed to mark as read", err);
+        }
+    };
 
-    const fetchMessages = async () => {
+    const fetchMessages = async (currentChatId: number) => {
         setLoadingMessages(true);
         try {
-            const response = await fetch(`http://localhost:3001/api/chats/${chatId}/messages`, {
+            const response = await fetch(`http://localhost:3001/api/chats/${currentChatId}/messages`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!response.ok) throw new Error('Failed to load messages');
             const data = await response.json();
             setMessages(data.messages);
+            await markAsRead(currentChatId); // Mark as read *after* fetching
         } catch (error) {
             console.error("Error fetching messages:", error);
             toast({ title: "Chat Error", description: "Could not load conversation history.", variant: 'destructive' });
@@ -92,9 +94,35 @@ const markAsRead = async () => {
         }
     };
 
-    fetchMessages();
-    markAsRead();
-  }, [chatId, modalOpen, toast, onMessageSent]);
+    const findChat = async () => {
+        setLoadingMessages(true);
+        try {
+            const response = await fetch(`http://localhost:3001/api/chats/find?vehicleId=${initialVehicleId}&sellerId=${initialReceiverId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) {
+                setMessages([]); 
+                setLoadingMessages(false);
+                return;
+            }
+            const data = await response.json();
+            setChatId(data.chatId); 
+            await fetchMessages(data.chatId);
+        } catch (error) {
+            console.error("Error finding chat:", error);
+            setLoadingMessages(false);
+        }
+    };
+
+    if (chatId) {
+        fetchMessages(chatId);
+    } else if (initialVehicleId && initialReceiverId) {
+        findChat();
+    } else {
+        setLoadingMessages(false);
+        setMessages([]);
+    }
+  }, [chatId, modalOpen, initialVehicleId, initialReceiverId, toast]);
 
   useEffect(() => {
     scrollToBottom();
@@ -144,7 +172,7 @@ const markAsRead = async () => {
 
     } catch (error) {
         console.error("Error sending message:", error);
-        toast({ title: "Send Failed", description: "Could not send message. Please try again.", variant: 'destructive' });
+        toast({ title: "Send Failed", description: "Could not send message. Please try again.", variant: "destructive" });
         setMessages(prev => prev.filter(msg => msg.id !== tempId));
         setMessage(tempMessage.text);
     }

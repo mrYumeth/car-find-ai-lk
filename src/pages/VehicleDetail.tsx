@@ -30,7 +30,7 @@ interface VehicleDetails {
     rating: number;
     views: number;
     seller: {
-        id: number; // This is required for chat
+        id: number; // This must be provided by your backend API
         name: string;
         phone: string;
         email: string;
@@ -105,7 +105,7 @@ const VehicleDetail = () => {
     const { seller } = vehicle;
     const primaryContact = seller.phone || seller.email || 'N/A';
 
-    // --- FIX: DECLARE MISSING VARIABLES HERE ---
+    // --- FIX: Declaring the variables that were causing errors ---
     const receiverId = vehicle.seller.id;
     const vehicleId = vehicle.id;
 
