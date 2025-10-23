@@ -612,7 +612,7 @@ app.get('/api/search/nlp', async (req, res) => {
              // More robust model matching might involve checking title too
             dbQuery += ` AND (LOWER(v.model) LIKE LOWER($${paramIndex++}) OR LOWER(v.title) LIKE LOWER($${paramIndex++})) `;
             queryParams.push(`%${extractedEntities.model}%`, `%${extractedEntities.model}%`); // Add param twice
-            paramIndex++; // Increment again because we added two placeholders
+          //paramIndex++; // Increment again because we added two placeholders
         }
          if (extractedEntities.location) {
              // Using ILIKE for case-insensitive matching in PostgreSQL
