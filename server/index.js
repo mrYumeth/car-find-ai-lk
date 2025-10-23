@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const fetch = require('node-fetch'); // NLP Service
 
 const app = express();
 const port = 3001;
@@ -563,6 +564,145 @@ app.put('/api/chats/:chatId/read', authenticateToken, async (req, res) => {
     }
 });
 
+// ++ NEW: NLP Search Endpoint
+app.get('/api/search/nlp', async (req, res) => {
+    const queryText = req.query.q; // Get the natural language query (e.g., "q=Toyota CHR under 5 million")
+
+    if (!queryText) {
+        return res.status(400).send("Search query is missing.");
+    }
+
+    try {
+        // --- Step 1: Call NLP Service ---
+        // Assuming your Python NLP service runs on localhost:5000/parse
+        const nlpResponse = await fetch(`http://localhost:5000/parse?query=${encodeURIComponent(queryText)}`);
+        if (!nlpResponse.ok) {
+            console.error("NLP service failed with status:", nlpResponse.status);
+             // Fallback to basic keyword search in case NLP service fails
+            return await fallbackKeywordSearch(queryText, res);
+        }
+        const extractedEntities = await nlpResponse.json();
+        console.log("Extracted Entities:", extractedEntities); // Log for debugging
+
+        // Check if NLP returned any useful entities
+        if (Object.values(extractedEntities).every(v => v === null)) {
+             console.log("NLP returned no useful entities, falling back to keyword search.");
+             return await fallbackKeywordSearch(queryText, res);
+        }
+
+        // --- Step 2: Build Database Query ---
+        let dbQuery = `
+            SELECT
+                v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.make, v.model, v.year,
+                u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
+                (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
+            FROM vehicles v
+            JOIN users u ON v.user_id = u.id
+            WHERE 1=1 `; // Start with a condition that's always true
+
+        const queryParams = [];
+        let paramIndex = 1;
+
+        // Add conditions based on extracted entities
+        if (extractedEntities.make) {
+            dbQuery += ` AND LOWER(v.make) LIKE LOWER($${paramIndex++}) `;
+            queryParams.push(`%${extractedEntities.make}%`);
+        }
+        if (extractedEntities.model) {
+             // More robust model matching might involve checking title too
+            dbQuery += ` AND (LOWER(v.model) LIKE LOWER($${paramIndex++}) OR LOWER(v.title) LIKE LOWER($${paramIndex++})) `;
+            queryParams.push(`%${extractedEntities.model}%`, `%${extractedEntities.model}%`); // Add param twice
+            paramIndex++; // Increment again because we added two placeholders
+        }
+         if (extractedEntities.location) {
+             // Using ILIKE for case-insensitive matching in PostgreSQL
+            dbQuery += ` AND v.location ILIKE $${paramIndex++} `;
+            queryParams.push(`%${extractedEntities.location}%`);
+        }
+         if (extractedEntities.min_price) {
+            dbQuery += ` AND v.price >= $${paramIndex++} `;
+            queryParams.push(extractedEntities.min_price);
+        }
+        if (extractedEntities.max_price) {
+            dbQuery += ` AND v.price <= $${paramIndex++} `;
+            queryParams.push(extractedEntities.max_price);
+        }
+        if (extractedEntities.year) {
+             dbQuery += ` AND v.year = $${paramIndex++} `;
+            queryParams.push(extractedEntities.year);
+        }
+        if (extractedEntities.fuel_type) {
+             dbQuery += ` AND v.fuel_type ILIKE $${paramIndex++} `;
+             queryParams.push(extractedEntities.fuel_type); // Match exact fuel type from NLP
+        }
+
+        dbQuery += ` ORDER BY v.created_at DESC`;
+
+        // --- Step 3: Execute Query ---
+        console.log("Executing DB Query:", dbQuery); // Log for debugging
+        console.log("Query Params:", queryParams); // Log for debugging
+        const results = await pool.query(dbQuery, queryParams);
+
+        // --- Step 4: Format and Return Results ---
+         const vehicles = formatVehicleResults(results.rows);
+        res.json(vehicles);
+
+    } catch (err) {
+        console.error("Error during NLP search:", err);
+        // Fallback to basic search on any error during processing
+        await fallbackKeywordSearch(queryText, res);
+    }
+});
+
+// ++ Helper function for formatting results (to avoid repetition)
+function formatVehicleResults(rows) {
+  return rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      price: row.price ? Number(row.price).toLocaleString() : 'N/A',
+      location: row.location,
+      mileage: row.mileage ? `${row.mileage.toLocaleString()} km` : 'N/A',
+      fuel: row.fuel,
+      image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg',
+      make: row.make,
+      model: row.model, // Include model and year if available
+      year: row.year,
+      seller_id: row.seller_id,
+      seller_name: row.seller_name,
+      seller_phone: row.seller_phone,
+      seller_email: row.seller_email,
+      is_rentable: row.is_rentable,
+      rating: 4.5 // Placeholder rating
+  }));
+}
+
+// ++ Helper function for fallback keyword search
+async function fallbackKeywordSearch(queryText, res) {
+    console.log(`Falling back to keyword search for: "${queryText}"`);
+    try {
+         const searchTermPattern = `%${queryText.toLowerCase()}%`;
+         const results = await pool.query(
+            `SELECT
+                v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.make, v.model, v.year,
+                u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
+                (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
+            FROM vehicles v
+            JOIN users u ON v.user_id = u.id
+            WHERE LOWER(v.title) LIKE $1
+               OR LOWER(v.make) LIKE $1
+               OR LOWER(v.model) LIKE $1
+               OR LOWER(v.location) LIKE $1
+               OR LOWER(v.description) LIKE $1
+            ORDER BY v.created_at DESC`,
+            [searchTermPattern]
+        );
+        const vehicles = formatVehicleResults(results.rows);
+        res.json(vehicles); // Send keyword results
+    } catch (fallbackErr) {
+        console.error("Error during fallback keyword search:", fallbackErr);
+        res.status(500).send("Error processing search query.");
+    }
+}
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
