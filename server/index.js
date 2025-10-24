@@ -1,3 +1,4 @@
+// server/index.js
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -7,6 +8,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const fetch = require('node-fetch'); // NLP Service
+const authenticateToken = require('./authMiddleware'); // KEEP THIS LINE
 
 const app = express();
 const port = 3001;
@@ -16,7 +18,7 @@ const JWT_SECRET = 'your_super_secret_and_long_jwt_key';
 // --- MIDDLEWARE ---
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public')))
 
 // --- MULTER SETUP FOR FILE UPLOADS ---
 const storage = multer.diskStorage({
@@ -41,20 +43,6 @@ const pool = new Pool({
   password: 'YumeBoy',
   port: 5432,
 });
-
-// Helper function to verify JWT and get user ID
-const authenticateToken = (req, res, next) => {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return res.status(401).send("Authorization header missing");
-    
-    try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        req.user = decoded; // Attach user payload to the request
-        next();
-    } catch (err) {
-        return res.status(403).send("Invalid token");
-    }
-};
 
 // --- API ENDPOINTS ---
 
@@ -274,31 +262,41 @@ app.get('/api/edit-vehicle/:id', authenticateToken, async (req, res) => {
 app.get('/api/vehicles/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        
+
+        // Fetch vehicle and seller details
         const vehicleResult = await pool.query(
-            `SELECT 
-                v.*, 
-                u.id AS seller_id, 
-                u.username AS seller_name, 
-                u.phone AS seller_phone, 
-                u.email AS seller_email,
-                u.role AS seller_role
-             FROM vehicles v
-             JOIN users u ON v.user_id = u.id
-             WHERE v.id = $1`,
+            `SELECT
+                v.*,
+                u.id AS seller_id,
+                u.username AS seller_name,
+                u.phone AS seller_phone,
+                u.email AS seller_email
+                // u.role AS seller_role // Uncomment if you add role to users table
+            FROM vehicles v
+            JOIN users u ON v.user_id = u.id
+            WHERE v.id = $1`,
             [id]
         );
 
         if (vehicleResult.rows.length === 0) {
+            console.log(`Vehicle with ID ${id} not found.`); // Log when not found
             return res.status(404).send("Vehicle not found.");
         }
         const vehicle = vehicleResult.rows[0];
 
+        // Fetch images
         const imagesResult = await pool.query(
             `SELECT id, image_url FROM vehicle_images WHERE vehicle_id = $1 ORDER BY id ASC`,
             [id]
         );
 
+        // Map images to objects with full URLs
+        const imagesWithFullUrl = imagesResult.rows.map(row => ({
+            id: row.id,
+            image_url: `http://localhost:${port}${row.image_url}` // Add server prefix
+        }));
+
+        // Construct the response object
         const vehicleData = {
             id: vehicle.id,
             title: vehicle.title,
@@ -307,27 +305,34 @@ app.get('/api/vehicles/:id', async (req, res) => {
             model: vehicle.model,
             year: vehicle.year,
             condition: vehicle.condition,
-            price: Number(vehicle.price).toLocaleString(),
-            mileage: vehicle.mileage ? `${vehicle.mileage.toLocaleString()} km` : 'N/A',
+            price: vehicle.price, // Send raw value
+            mileage: vehicle.mileage, // Send raw value
             fuel_type: vehicle.fuel_type,
             transmission: vehicle.transmission,
             location: vehicle.location,
             is_rentable: vehicle.is_rentable,
             created_at: vehicle.created_at,
-            seller: {
-                id: vehicle.seller_id,
-                name: vehicle.seller_name,
-                phone: vehicle.seller_phone,
-                email: vehicle.seller_email,
-                role: vehicle.seller_role,
-            },
-            images: imagesResult.rows.map(row => row.image_url),
-            rating: 4.5,
-            views: 120,
+            // Flat seller properties
+            seller_id: vehicle.seller_id,
+            seller_name: vehicle.seller_name,
+            seller_phone: vehicle.seller_phone,
+            seller_email: vehicle.seller_email,
+            // seller_role: vehicle.seller_role, // Uncomment if applicable
+
+            // ++ FIX IS HERE: Use the correct images array ++
+            images: imagesWithFullUrl, // Use the array with full URLs and IDs
+
+            // rating: 4.5, // Add if needed
+            // views: 120, // Add if needed
         };
-        res.json(vehicleData);
+
+        // Log the data being sent (optional debugging)
+        // console.log("Sending vehicle data:", JSON.stringify(vehicleData, null, 2));
+
+        res.json(vehicleData); // Send the correct data structure
+
     } catch (err) {
-        console.error("Error fetching vehicle details:", err.message);
+        console.error(`Error fetching vehicle details for ID ${req.params.id}:`, err.message); // Log error with ID
         res.status(500).send("Server error when fetching vehicle details: " + err.message);
     }
 });
@@ -703,6 +708,119 @@ async function fallbackKeywordSearch(queryText, res) {
         res.status(500).send("Error processing search query.");
     }
 }
+
+// ++ NEW/MODIFIED: Endpoint to log user interactions
+app.post('/api/interactions/log', authenticateToken, async (req, res) => {
+    const userId = req.user.id;
+    // Type can be 'view' or 'search'
+    const { type, vehicleId, queryText, extractedEntities } = req.body;
+
+    if (!type || !userId) {
+        return res.status(400).send("Missing interaction type or user info.");
+    }
+
+    try {
+        if (type === 'view' && vehicleId) {
+            // Log vehicle view using ON CONFLICT to update timestamp
+            await pool.query(
+                `INSERT INTO user_vehicle_views (user_id, vehicle_id, viewed_at)
+                 VALUES ($1, $2, NOW())
+                 ON CONFLICT (user_id, vehicle_id)
+                 DO UPDATE SET viewed_at = NOW()`,
+                [userId, vehicleId]
+            );
+            console.log(`Logged view for user ${userId}, vehicle ${vehicleId}`);
+
+        } else if (type === 'search' && queryText) {
+            // Log search query using your search_logs table
+            await pool.query(
+                `INSERT INTO search_logs (user_id, search_text, created_at, extracted_make, extracted_model, extracted_location, extracted_year, extracted_min_price, extracted_max_price, extracted_fuel_type)
+                 VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, $9)`,
+                [
+                    userId,
+                    queryText,
+                    extractedEntities?.make || null,
+                    extractedEntities?.model || null,
+                    extractedEntities?.location || null,
+                    extractedEntities?.year || null,
+                    extractedEntities?.min_price || null,
+                    extractedEntities?.max_price || null,
+                    extractedEntities?.fuel_type || null,
+                ]
+            );
+             console.log(`Logged search for user ${userId}: "${queryText}"`);
+        } else {
+             return res.status(400).send("Invalid interaction type or missing required data.");
+        }
+        res.status(201).send("Interaction logged.");
+    } catch (err) {
+        console.error("Error logging interaction:", err);
+        res.status(500).send("Server error");
+    }
+});
+
+// ++ MODIFIED: Endpoint to get recommendations FOR the logged-in user FROM DB
+app.get('/api/recommendations', authenticateToken, async (req, res) => {
+    const userId = req.user.id;
+    const numRecs = req.query.num || 5; // Default to 5 recommendations
+
+    if (!userId) {
+        // Although authenticateToken should handle this, double-check
+        return res.status(401).send("User not authenticated.");
+    }
+
+    try {
+        // --- Step 1: Query the recommendations table ---
+        const recQuery = `
+            SELECT r.vehicle_id 
+            FROM recommendations r
+            WHERE r.user_id = $1
+            ORDER BY r.score DESC, r.created_at DESC -- Order by score, then by date
+            LIMIT $2
+        `;
+        const recResult = await pool.query(recQuery, [userId, numRecs]);
+        const recommendedIds = recResult.rows.map(row => row.vehicle_id);
+
+        let vehicles = [];
+        if (recommendedIds.length > 0) {
+            // --- Step 2: Fetch full vehicle details for the recommended IDs ---
+            const placeholders = recommendedIds.map((_, i) => `$${i + 1}`).join(',');
+            const detailsQuery = `
+                SELECT
+                    v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.make, v.model, v.year,
+                    u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
+                    (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
+                FROM vehicles v
+                JOIN users u ON v.user_id = u.id
+                WHERE v.id IN (${placeholders})
+            `; // Note: Ordering might be lost here, needs re-ordering below
+            
+            const detailsResult = await pool.query(detailsQuery, recommendedIds);
+            const fetchedVehicles = formatVehicleResults(detailsResult.rows); // Use existing helper
+
+             // --- Step 3: Reorder results to match recommendation score order ---
+             vehicles = recommendedIds.map(id => fetchedVehicles.find(v => v.id === id)).filter(Boolean);
+        } else {
+             console.log(`No pre-calculated recommendations found for user ${userId}. Consider fallback.`);
+             // Optional Fallback: Fetch recently added or popular vehicles directly if no recommendations exist
+             // Example fallback: Fetch 4 most recent vehicles
+             const fallbackResult = await pool.query(`
+                 SELECT v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.make, v.model, v.year,
+                        u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
+                        (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
+                 FROM vehicles v JOIN users u ON v.user_id = u.id
+                 ORDER BY v.created_at DESC LIMIT 4
+             `);
+             vehicles = formatVehicleResults(fallbackResult.rows);
+        }
+
+        res.json(vehicles);
+
+    } catch (err) {
+        console.error(`Error fetching recommendations for user ${userId}:`, err);
+        res.status(500).send("Server error fetching recommendations.");
+    }
+});
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
