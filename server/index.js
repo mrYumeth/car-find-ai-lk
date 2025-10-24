@@ -750,29 +750,49 @@ app.post('/api/interactions/log', authenticateToken, async (req, res) => {
 
 // ++ MODIFIED: Endpoint to get recommendations FOR the logged-in user FROM DB
 app.get('/api/recommendations', authenticateToken, async (req, res) => {
-    const userId = req.user.id;
+    // Ensure req.user exists and has an id
+    if (!req.user || typeof req.user.id === 'undefined') {
+        console.error("[API /recommendations] Error: User ID not found in token payload.");
+        return res.status(401).send("User not properly authenticated.");
+    }
+
+    const userIdFromToken = req.user.id;
     const numRecs = req.query.num || 5; // Default to 5 recommendations
 
-    if (!userId) {
-        // Although authenticateToken should handle this, double-check
-        return res.status(401).send("User not authenticated.");
+    // ++ FIX: Log the ID and its type from the token ++
+    console.log(`[API /recommendations] Attempting fetch for user ID from token: ${userIdFromToken} (Type: ${typeof userIdFromToken})`);
+
+    // ++ FIX: Explicitly parse the user ID to an integer ++
+    const userId = parseInt(userIdFromToken, 10);
+
+    // Check if parsing failed (e.g., if id wasn't a number string)
+    if (isNaN(userId)) {
+        console.error(`[API /recommendations] Error: Failed to parse user ID '${userIdFromToken}' as integer.`);
+        return res.status(400).send("Invalid user identifier.");
     }
+
+    console.log(`[API /recommendations] Querying recommendations table for user_id: ${userId} (Type: ${typeof userId})`);
+
 
     try {
         // --- Step 1: Query the recommendations table ---
         const recQuery = `
-            SELECT r.vehicle_id 
+            SELECT r.vehicle_id
             FROM recommendations r
-            WHERE r.user_id = $1
-            ORDER BY r.score DESC, r.created_at DESC -- Order by score, then by date
+            WHERE r.user_id = $1 -- Use the parsed integer ID
+            ORDER BY r.score DESC, r.created_at DESC
             LIMIT $2
         `;
+        // ++ FIX: Pass the parsed integer 'userId' to the query ++
         const recResult = await pool.query(recQuery, [userId, numRecs]);
         const recommendedIds = recResult.rows.map(row => row.vehicle_id);
 
+        console.log(`[API /recommendations] Found ${recommendedIds.length} recommendation IDs in DB for user ${userId}:`, recommendedIds);
+
+
         let vehicles = [];
         if (recommendedIds.length > 0) {
-            // --- Step 2: Fetch full vehicle details for the recommended IDs ---
+            // --- Step 2: Fetch full vehicle details ---
             const placeholders = recommendedIds.map((_, i) => `$${i + 1}`).join(',');
             const detailsQuery = `
                 SELECT
@@ -782,17 +802,17 @@ app.get('/api/recommendations', authenticateToken, async (req, res) => {
                 FROM vehicles v
                 JOIN users u ON v.user_id = u.id
                 WHERE v.id IN (${placeholders})
-            `; // Note: Ordering might be lost here, needs re-ordering below
-            
+            `;
+
             const detailsResult = await pool.query(detailsQuery, recommendedIds);
             const fetchedVehicles = formatVehicleResults(detailsResult.rows); // Use existing helper
 
-             // --- Step 3: Reorder results to match recommendation score order ---
+             // --- Step 3: Reorder results ---
              vehicles = recommendedIds.map(id => fetchedVehicles.find(v => v.id === id)).filter(Boolean);
         } else {
-             console.log(`No pre-calculated recommendations found for user ${userId}. Consider fallback.`);
-             // Optional Fallback: Fetch recently added or popular vehicles directly if no recommendations exist
-             // Example fallback: Fetch 4 most recent vehicles
+             // This log is now expected if the DB query returned no rows
+             console.log(`[API /recommendations] No pre-calculated recommendations found in DB for user ${userId}. Using fallback.`);
+             // Fallback logic remains the same
              const fallbackResult = await pool.query(`
                  SELECT v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.make, v.model, v.year,
                         u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
@@ -803,10 +823,11 @@ app.get('/api/recommendations', authenticateToken, async (req, res) => {
              vehicles = formatVehicleResults(fallbackResult.rows);
         }
 
+        console.log(`[API /recommendations] Sending ${vehicles.length} vehicle objects to user ${userId}.`);
         res.json(vehicles);
 
     } catch (err) {
-        console.error(`Error fetching recommendations for user ${userId}:`, err);
+        console.error(`[API /recommendations] Error fetching recommendations for user ${userId}:`, err);
         res.status(500).send("Server error fetching recommendations.");
     }
 });
