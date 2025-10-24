@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const fetch = require('node-fetch'); // NLP Service
 const authenticateToken = require('./authMiddleware'); // KEEP THIS LINE
+const isAdmin = require('./adminMiddleware'); // ++ Import isAdmin middleware
 
 const app = express();
 const port = 3001;
@@ -829,6 +830,85 @@ app.get('/api/recommendations', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error(`[API /recommendations] Error fetching recommendations for user ${userId}:`, err);
         res.status(500).send("Server error fetching recommendations.");
+    }
+});
+
+// --- ADMIN ENDPOINTS ---
+
+// GET All Users (Admin Only)
+app.get('/api/admin/users', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT id, username, email, phone, role, created_at FROM users ORDER BY id ASC'
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("[API /admin/users] Error fetching users:", err.message);
+        res.status(500).send("Server error");
+    }
+});
+
+// GET All Vehicles (Admin Only)
+app.get('/api/admin/vehicles', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        // Fetch vehicles along with owner username
+        const result = await pool.query(
+            `SELECT
+                v.id, v.title, v.make, v.model, v.price, v.location, v.created_at, v.is_rentable,
+                u.id as user_id, u.username as owner_username
+             FROM vehicles v
+             JOIN users u ON v.user_id = u.id
+             ORDER BY v.created_at DESC`
+        );
+         // Format results slightly for consistency (optional)
+         const vehicles = result.rows.map(row => ({
+            ...row,
+            price: row.price ? Number(row.price).toLocaleString() : 'N/A',
+        }));
+        res.json(vehicles);
+    } catch (err) {
+        console.error("[API /admin/vehicles] Error fetching vehicles:", err.message);
+        res.status(500).send("Server error");
+    }
+});
+
+// DELETE a User (Admin Only)
+app.delete('/api/admin/users/:id', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+     // Basic check to prevent admin from deleting themselves (adjust if needed)
+    if (req.user.id == id) {
+        return res.status(400).send("Admin cannot delete their own account via API.");
+    }
+    try {
+        // Note: ON DELETE CASCADE in vehicles table will delete user's vehicles
+        // Be cautious about deleting users, consider soft deletes (adding an 'is_active' flag) instead
+        const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
+        if (result.rowCount === 0) {
+            return res.status(404).send("User not found.");
+        }
+        console.log(`[Admin Action] User ${req.user.id} deleted user ${id}.`);
+        res.status(200).json({ message: `User ${id} deleted successfully` });
+    } catch (err) {
+        console.error(`[API /admin/users/:id] Error deleting user ${id}:`, err.message);
+        // Handle potential foreign key issues if cascade isn't set up everywhere
+        res.status(500).send("Server error");
+    }
+});
+
+// DELETE a Vehicle (Admin Only)
+app.delete('/api/admin/vehicles/:id', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Deleting from vehicles will trigger cascade delete in vehicle_images, chats, recommendations, user_vehicle_views etc.
+        const result = await pool.query('DELETE FROM vehicles WHERE id = $1 RETURNING id, title', [id]);
+        if (result.rowCount === 0) {
+            return res.status(404).send("Vehicle not found.");
+        }
+        console.log(`[Admin Action] User ${req.user.id} deleted vehicle ${id} (${result.rows[0].title}).`);
+        res.status(200).json({ message: `Vehicle ${id} deleted successfully` });
+    } catch (err) {
+        console.error(`[API /admin/vehicles/:id] Error deleting vehicle ${id}:`, err.message);
+        res.status(500).send("Server error");
     }
 });
 
