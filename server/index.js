@@ -263,7 +263,7 @@ app.get('/api/vehicles/:id', async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Fetch vehicle and seller details
+        // ++ FIX: Removed the invalid '//' comment from the SQL query ++
         const vehicleResult = await pool.query(
             `SELECT
                 v.*,
@@ -271,32 +271,31 @@ app.get('/api/vehicles/:id', async (req, res) => {
                 u.username AS seller_name,
                 u.phone AS seller_phone,
                 u.email AS seller_email
-                // u.role AS seller_role // Uncomment if you add role to users table
+                -- If you add seller_role later, add it here without '//'
             FROM vehicles v
             JOIN users u ON v.user_id = u.id
             WHERE v.id = $1`,
             [id]
         );
+        // ++ END FIX ++
 
         if (vehicleResult.rows.length === 0) {
-            console.log(`Vehicle with ID ${id} not found.`); // Log when not found
+            console.log(`[API /vehicles/:id] Vehicle with ID ${id} not found.`);
             return res.status(404).send("Vehicle not found.");
         }
         const vehicle = vehicleResult.rows[0];
 
-        // Fetch images
         const imagesResult = await pool.query(
             `SELECT id, image_url FROM vehicle_images WHERE vehicle_id = $1 ORDER BY id ASC`,
             [id]
         );
 
-        // Map images to objects with full URLs
         const imagesWithFullUrl = imagesResult.rows.map(row => ({
             id: row.id,
-            image_url: `http://localhost:${port}${row.image_url}` // Add server prefix
+            image_url: `http://localhost:${port}${row.image_url}`
         }));
 
-        // Construct the response object
+        // Construct the response object (This part was correct in the last version)
         const vehicleData = {
             id: vehicle.id,
             title: vehicle.title,
@@ -305,34 +304,24 @@ app.get('/api/vehicles/:id', async (req, res) => {
             model: vehicle.model,
             year: vehicle.year,
             condition: vehicle.condition,
-            price: vehicle.price, // Send raw value
-            mileage: vehicle.mileage, // Send raw value
+            price: vehicle.price,
+            mileage: vehicle.mileage,
             fuel_type: vehicle.fuel_type,
             transmission: vehicle.transmission,
             location: vehicle.location,
             is_rentable: vehicle.is_rentable,
             created_at: vehicle.created_at,
-            // Flat seller properties
             seller_id: vehicle.seller_id,
             seller_name: vehicle.seller_name,
             seller_phone: vehicle.seller_phone,
             seller_email: vehicle.seller_email,
-            // seller_role: vehicle.seller_role, // Uncomment if applicable
-
-            // ++ FIX IS HERE: Use the correct images array ++
-            images: imagesWithFullUrl, // Use the array with full URLs and IDs
-
-            // rating: 4.5, // Add if needed
-            // views: 120, // Add if needed
+            images: imagesWithFullUrl,
         };
 
-        // Log the data being sent (optional debugging)
-        // console.log("Sending vehicle data:", JSON.stringify(vehicleData, null, 2));
-
-        res.json(vehicleData); // Send the correct data structure
+        res.json(vehicleData);
 
     } catch (err) {
-        console.error(`Error fetching vehicle details for ID ${req.params.id}:`, err.message); // Log error with ID
+        console.error(`[API /vehicles/:id] Error fetching details for ID ${req.params.id}:`, err.message);
         res.status(500).send("Server error when fetching vehicle details: " + err.message);
     }
 });
