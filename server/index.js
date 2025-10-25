@@ -872,6 +872,45 @@ app.get('/api/admin/vehicles', authenticateToken, isAdmin, async (req, res) => {
     }
 });
 
+// PUT Update a User (Admin Only)
+app.put('/api/admin/users/:id', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { username, email, phone, role } = req.body; // Extract fields allowed to be updated
+
+    // Validate role
+    const allowedRoles = ['buyer', 'seller']; // Admins cannot be demoted/promoted via this UI for safety
+    if (!allowedRoles.includes(role)) {
+        return res.status(400).send("Invalid role specified.");
+    }
+    // Basic check to prevent admin from editing themselves
+     if (req.user.id == id) {
+         return res.status(400).send("Admin cannot change their own role via API.");
+     }
+
+    try {
+        const result = await pool.query(
+            `UPDATE users
+             SET username = $1, email = $2, phone = $3, role = $4
+             WHERE id = $5 AND role != 'admin' -- Prevent updating other admins here too
+             RETURNING id, username, email, phone, role, created_at`, // Return updated data
+            [username, email, phone, role, id]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).send("User not found, is an admin, or update failed.");
+        }
+
+        console.log(`[Admin Action] User ${req.user.id} updated user ${id}.`);
+        res.status(200).json(result.rows[0]); // Send back the updated user object
+    } catch (err) {
+        console.error(`[API /admin/users/:id PUT] Error updating user ${id}:`, err.message);
+        if (err.code === '23505') { // Handle unique constraint violation (e.g., email already exists)
+            return res.status(409).send("Update failed: Email or username might already be in use.");
+        }
+        res.status(500).send("Server error during user update.");
+    }
+});
+
 // DELETE a User (Admin Only)
 app.delete('/api/admin/users/:id', authenticateToken, isAdmin, async (req, res) => {
     const { id } = req.params;
