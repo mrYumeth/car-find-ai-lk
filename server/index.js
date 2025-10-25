@@ -851,21 +851,28 @@ app.get('/api/admin/users', authenticateToken, isAdmin, async (req, res) => {
 // GET All Vehicles (Admin Only)
 app.get('/api/admin/vehicles', authenticateToken, isAdmin, async (req, res) => {
     try {
-        // Fetch vehicles along with owner username
+        // **FIX:** The query now selects v.* to get ALL columns (description, year, etc.)
+        // and includes a subquery to get the first image.
         const result = await pool.query(
             `SELECT
-                v.id, v.title, v.make, v.model, v.price, v.location, v.created_at, v.is_rentable,
-                u.id as user_id, u.username as owner_username
+                v.*, -- This gets all columns from the vehicles table
+                u.id as user_id, u.username as owner_username,
+                (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) as image
              FROM vehicles v
              JOIN users u ON v.user_id = u.id
              ORDER BY v.created_at DESC`
         );
-         // Format results slightly for consistency (optional)
+        
+         // Format price and ensure image has full URL
          const vehicles = result.rows.map(row => ({
             ...row,
-            price: row.price ? Number(row.price).toLocaleString() : 'N/A',
+            // Convert price from decimal to string if needed, or just send raw
+            // price: row.price ? Number(row.price).toLocaleString() : 'N/A', 
+            image: row.image ? `${row.image}` : null // Just send the path
         }));
-        res.json(vehicles);
+
+        res.json(vehicles); // Send the full vehicle objects
+
     } catch (err) {
         console.error("[API /admin/vehicles] Error fetching vehicles:", err.message);
         res.status(500).send("Server error");
@@ -931,6 +938,65 @@ app.delete('/api/admin/users/:id', authenticateToken, isAdmin, async (req, res) 
         console.error(`[API /admin/users/:id] Error deleting user ${id}:`, err.message);
         // Handle potential foreign key issues if cascade isn't set up everywhere
         res.status(500).send("Server error");
+    }
+});
+
+// PUT Update a Vehicle (Admin Only)
+app.put('/api/admin/vehicles/:id', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    // These are the fields from the frontend modal
+    const {
+        title, description, price, make, model, year,
+        mileage, fuel_type, transmission, location, is_rentable
+    } = req.body;
+
+    // Convert types for database
+    const parsedPrice = parseFloat(price) || null;
+    const parsedYear = parseInt(year, 10) || null;
+    const parsedMileage = parseInt(mileage, 10) || null;
+
+    try {
+        const result = await pool.query(
+            `UPDATE vehicles
+             SET title = $1, description = $2, price = $3, make = $4, model = $5,
+                 year = $6, mileage = $7, fuel_type = $8, transmission = $9,
+                 location = $10, is_rentable = $11
+             WHERE id = $12
+             RETURNING id`, // Just return the ID
+            [
+                title, description, parsedPrice, make, model, parsedYear,
+                parsedMileage, fuel_type, transmission, location, is_rentable,
+                id
+            ]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).send("Vehicle not found or update failed.");
+        }
+
+        // After updating, re-fetch the *complete* vehicle data with joins
+        // This is crucial to send the full object back to the frontend
+        const updatedVehicleResult = await pool.query(
+            `SELECT
+                v.*,
+                u.id as user_id, u.username as owner_username,
+                (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) as image
+             FROM vehicles v
+             JOIN users u ON v.user_id = u.id
+             WHERE v.id = $1`,
+            [id]
+        );
+        
+        if (updatedVehicleResult.rowCount === 0) {
+             return res.status(404).send("Failed to re-fetch updated vehicle data.");
+        }
+
+        console.log(`[Admin Action] User ${req.user.id} updated vehicle ${id}.`);
+        res.status(200).json(updatedVehicleResult.rows[0]); // Send back the full object
+
+    } catch (err) {
+        console.error(`[API /admin/vehicles/:id PUT] Error updating vehicle ${id}:`, err.message);
+        res.status(500).send("Server error during vehicle update.");
     }
 });
 

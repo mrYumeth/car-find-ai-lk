@@ -1,6 +1,6 @@
 // src/pages/AdminDashboard.tsx
 import React, { useState, useEffect } from "react";
-import { Users, Car, Flag, CheckCircle, XCircle, Edit, Trash2, Search } from "lucide-react";
+import { Users, Car, Flag, CheckCircle, Edit, Trash2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +21,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-// Import Dialog components for editing
 import {
   Dialog,
   DialogContent,
@@ -33,32 +32,37 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 
 
-// Define types for API data
+// --- Define types for API data ---
 interface User {
   id: number;
   username: string;
   email: string;
   phone: string | null;
-  role: 'buyer' | 'seller' | 'admin'; // Make role more specific
+  role: 'buyer' | 'seller' | 'admin';
   created_at: string;
-  // Add other fields if your API returns them
 }
 
 interface Listing {
    id: number;
    title: string;
-   owner_username: string;
+   description: string;
    price: string;
-   status?: string;
-   created_at: string;
-   image?: string | null;
+   make: string;
+   model: string;
+   year: number;
+   mileage: number;
+   fuel_type: 'Petrol' | 'Diesel' | 'Electric' | 'Hybrid' | 'Other';
+   transmission: 'Manual' | 'Automatic';
+   location: string;
    is_rentable: boolean;
+   created_at: string;
    user_id: number;
-   make?: string;
-   model?: string;
-   location?: string;
+   owner_username: string;
+   image?: string | null;
 }
 
 interface Report { // Placeholder
@@ -71,21 +75,27 @@ interface Report { // Placeholder
   reportDate: string;
 }
 
-// State for the user being edited in the modal
-// Use Partial<User> to make fields optional during editing state
-interface EditingUserState {
+interface EditingUserState { /* ... EditingUserState remains the same ... */
     id: number;
     username: string;
     email: string;
     phone: string | null;
     role: 'buyer' | 'seller' | 'admin';
-    created_at: string; // Keep created_at for full User type compatibility
+    created_at: string;
+}
+
+// **MODIFIED** State for the listing being edited
+// Now omits fewer fields, keeping 'image' for the preview
+interface EditingListingState extends Omit<Listing, 'owner_username' | 'created_at' | 'user_id'> {
+    // Includes id, title, description, price, make, model, year, mileage,
+    // fuel_type, transmission, location, is_rentable, AND image
 }
 
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("users");
-  const [activeUserTab, setActiveUserTab] = useState("sellers"); // State for nested user tabs
+  const [activeUserTab, setActiveUserTab] = useState("sellers");
+  const [activeListingTab, setActiveListingTab] = useState("forSale"); // **NEW** State for listing tabs
   const [searchTerm, setSearchTerm] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
@@ -95,12 +105,17 @@ const AdminDashboard = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  // State for the edit modal
+  // State for Edit User modal
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<EditingUserState | null>(null);
 
+  // State for Edit Listing modal
+  const [isEditListingDialogOpen, setIsEditListingDialogOpen] = useState(false);
+  const [editingListing, setEditingListing] = useState<EditingListingState | null>(null);
+
+
   // --- Fetch Users Function ---
-  const fetchUsers = async () => { /* ... fetchUsers remains the same ... */
+  const fetchUsers = async () => { /* ... fetchUsers ... */
     setLoadingUsers(true);
     const token = localStorage.getItem('token');
     if (!token) {
@@ -121,7 +136,7 @@ const AdminDashboard = () => {
       console.error("Error fetching users:", error);
       toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
       if ((error as Error).message.includes("Forbidden")) {
-        navigate('/'); // Redirect non-admins
+        navigate('/');
       }
     } finally {
       setLoadingUsers(false);
@@ -130,7 +145,7 @@ const AdminDashboard = () => {
 
 
   // --- Fetch Listings Function ---
-  const fetchListings = async () => { /* ... fetchListings remains the same ... */
+  const fetchListings = async () => { /* ... fetchListings ... */
         setLoadingListings(true);
         const token = localStorage.getItem('token');
         if (!token) {
@@ -151,7 +166,7 @@ const AdminDashboard = () => {
             console.error("Error fetching listings:", error);
             toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
              if ((error as Error).message.includes("Forbidden")) {
-               navigate('/'); // Redirect non-admins
+               navigate('/');
              }
         } finally {
             setLoadingListings(false);
@@ -159,20 +174,18 @@ const AdminDashboard = () => {
     };
 
 
-  // --- Fetch data when tab changes or component mounts ---
+// --- Fetch data ---
   useEffect(() => {
-    if (activeTab === "users") {
-      fetchUsers();
-    } else if (activeTab === "listings") {
-       fetchListings();
-    }
-  }, [activeTab]);
+    fetchUsers();
+    fetchListings();
+    // fetchReports(); // You can add this when your reports API is ready
+  }, []); // Empty dependency array [] means this runs only ONCE on mount
 
-  // --- Handle User Delete ---
-  const handleDeleteUser = async (userId: number, username: string) => { /* ... handleDeleteUser remains the same ... */
+
+  // --- User Edit/Delete Handlers ---
+  const handleDeleteUser = async (userId: number, username: string) => { /* ... handleDeleteUser ... */
     const token = localStorage.getItem('token');
     if (!token) return;
-
     try {
       const response = await fetch(`http://localhost:3001/api/admin/users/${userId}`, {
         method: 'DELETE',
@@ -183,55 +196,34 @@ const AdminDashboard = () => {
           throw new Error(errorText || "Failed to delete user.");
       }
       toast({ title: "Success", description: `User ${username} deleted.` });
-      setUsers(currentUsers => currentUsers.filter(user => user.id !== userId)); // Update UI
+      setUsers(currentUsers => currentUsers.filter(user => user.id !== userId));
     } catch (error) {
       toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
     }
   };
-
-
-  // --- Handle Open Edit Modal ---
-  const handleEditUserClick = (user: User) => {
+  const handleEditUserClick = (user: User) => { /* ... handleEditUserClick ... */
     setEditingUser({ ...user });
     setIsEditDialogOpen(true);
   };
-
-  // --- Handle Input Changes in Edit Modal ---
-  // **FIX:** This handler now correctly maps the input's 'id' to the state key
-  const handleEditInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEditInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... handleEditInputChange ... */
       if (!editingUser) return;
-      // Use the input's 'id' (e.g., "username", "email") as the key
       setEditingUser({ ...editingUser, [e.target.id]: e.target.value });
   };
-
-  // --- Handle Role Change in Edit Modal ---
-  const handleEditRoleChange = (value: User['role']) => {
+  const handleEditRoleChange = (value: User['role']) => { /* ... handleEditRoleChange ... */
        if (!editingUser) return;
        setEditingUser({ ...editingUser, role: value });
   };
-
-
-  // --- Handle Save User ---
-  const handleSaveUser = async () => {
+  const handleSaveUser = async () => { /* ... handleSaveUser ... */
     if (!editingUser) return;
     const token = localStorage.getItem('token');
     if (!token) {
         toast({ title: "Error", description: "Authentication token missing.", variant: "destructive" });
         return;
     }
-    
-    // **NOTE:** Ensure your backend PUT /api/admin/users/:id endpoint is created
-    // and accepts { username, email, phone, role } in the body.
-
     try {
-        console.log("Attempting to save user:", editingUser);
-        
         const response = await fetch(`http://localhost:3001/api/admin/users/${editingUser.id}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({
                 username: editingUser.username,
                 email: editingUser.email,
@@ -239,34 +231,28 @@ const AdminDashboard = () => {
                 role: editingUser.role
             })
         });
-
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(errorText || "Failed to update user.");
         }
-        
-        const updatedUserFromServer = await response.json(); // Get the updated user from server
-        
-        // Update the user in the local state
+        const updatedUserFromServer = await response.json();
         setUsers(currentUsers =>
             currentUsers.map(u => (u.id === updatedUserFromServer.id ? updatedUserFromServer : u))
         );
-
         toast({ title: "Success", description: `User ${updatedUserFromServer.username} updated.` });
-        setIsEditDialogOpen(false); // Close the modal
-        setEditingUser(null); // Clear editing state
-
+        setIsEditDialogOpen(false);
+        setEditingUser(null);
     } catch (error) {
         toast({ title: "Error Updating User", description: (error as Error).message, variant: "destructive" });
     }
   };
 
 
-  // --- Handle Listing Delete ---
-  const handleDeleteListing = async (listingId: number, title: string) => { /* ... handleDeleteListing remains the same ... */
+  // --- Listing Edit/Delete Handlers ---
+
+  const handleDeleteListing = async (listingId: number, title: string) => { /* ... handleDeleteListing ... */
         const token = localStorage.getItem('token');
         if (!token) return;
-
         try {
             const response = await fetch(`http://localhost:3001/api/admin/vehicles/${listingId}`, {
                 method: 'DELETE',
@@ -277,23 +263,93 @@ const AdminDashboard = () => {
                 throw new Error(errorText || "Failed to delete listing.");
             }
             toast({ title: "Success", description: `Listing "${title}" deleted.` });
-            setListings(currentListings => currentListings.filter(listing => listing.id !== listingId)); // Update UI
+            setListings(currentListings => currentListings.filter(listing => listing.id !== listingId));
         } catch (error) {
             toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
         }
     };
 
+  // **MODIFIED** Handle Open Listing Edit Modal
+  const handleEditListingClick = (listing: Listing) => {
+    // Omit fields that are not part of the editing state
+    const { owner_username, created_at, user_id, ...editableFields } = listing;
+    setEditingListing(editableFields); // This now includes 'image'
+    setIsEditListingDialogOpen(true);
+  };
+
+  const handleEditListingInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => { /* ... handleEditListingInputChange ... */
+      if (!editingListing) return;
+      const { id, value, type } = e.target;
+      const newValue = type === 'number' ? parseFloat(value) || 0 : value;
+      setEditingListing({ ...editingListing, [id]: newValue });
+  };
+
+  const handleEditListingSelectChange = (name: string, value: string) => { /* ... handleEditListingSelectChange ... */
+       if (!editingListing) return;
+       setEditingListing({ ...editingListing, [name]: value });
+  };
+
+  const handleEditListingSwitchChange = (checked: boolean) => { /* ... handleEditListingSwitchChange ... */
+      if (!editingListing) return;
+      setEditingListing({ ...editingListing, is_rentable: checked });
+  };
+
+  const handleSaveListing = async () => { /* ... handleSaveListing ... */
+    if (!editingListing) return;
+    const token = localStorage.getItem('token');
+    if (!token) {
+        toast({ title: "Error", description: "Authentication token missing.", variant: "destructive" });
+        return;
+    }
+
+    try {
+        console.log("Attempting to save listing:", editingListing);
+        
+        // **Remove 'image' from the body sent to backend**
+        const { image, ...payload } = editingListing;
+        
+        const response = await fetch(`http://localhost:3001/api/admin/vehicles/${editingListing.id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload) // Send payload *without* image
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || "Failed to update listing.");
+        }
+        
+        const updatedListingFromServer = await response.json(); // Get the updated listing from server
+        
+        setListings(currentListings =>
+            currentListings.map(l => (l.id === updatedListingFromServer.id ? updatedListingFromServer : l))
+        );
+
+        toast({ title: "Success", description: `Listing "${updatedListingFromServer.title}" updated.` });
+        setIsEditListingDialogOpen(false);
+        setEditingListing(null);
+
+    } catch (error) {
+        toast({ title: "Error Updating Listing", description: (error as Error).message, variant: "destructive" });
+    }
+  };
+
+
   // --- Filter Logic & User Grouping ---
-  const filteredUsers = users.filter(user =>
+  const filteredUsers = users.filter(/* ... filter logic ... */
+    user =>
     user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
   const sellers = filteredUsers.filter(u => u.role === 'seller');
   const buyers = filteredUsers.filter(u => u.role === 'buyer');
   const admins = filteredUsers.filter(u => u.role === 'admin');
 
-  const filteredListings = listings.filter( /* ... filtering logic remains the same ... */
+  // **MODIFIED** Listing Filter Logic
+  const filteredListings = listings.filter(
     listing =>
         listing.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         listing.owner_username.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -301,22 +357,21 @@ const AdminDashboard = () => {
         (listing.model && listing.model.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (listing.location && listing.location.toLowerCase().includes(searchTerm.toLowerCase()))
     );
+  
+  // **NEW** Listing Grouping
+  const listingsForSale = filteredListings.filter(l => !l.is_rentable);
+  const listingsForRent = filteredListings.filter(l => l.is_rentable);
 
 
   // --- Format Date Helper ---
-   const formatDate = (dateString: string) => { /* ... formatDate remains the same ... */
-     try {
-       return new Date(dateString).toLocaleDateString('en-US', {
-         year: 'numeric', month: 'short', day: 'numeric'
-       });
-     } catch (e) {
-       return 'Invalid Date';
-     }
+   const formatDate = (dateString: string) => { /* ... formatDate ... */
+     try { return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); }
+     catch (e) { return 'Invalid Date'; }
    };
 
-    // --- **MODIFIED** Helper to Render User List (no title) ---
-    const renderUserList = (userList: User[]) => (
-        <div className="space-y-0"> {/* Container for border logic */}
+    // --- Render User List Helper ---
+    const renderUserList = (userList: User[]) => ( /* ... renderUserList ... */
+        <div className="space-y-0">
             {userList.length === 0 ? (
                 <p className="p-4 text-muted-foreground">
                     No users found in this category{searchTerm ? " matching your search" : ""}.
@@ -372,6 +427,65 @@ const AdminDashboard = () => {
             )))}
         </div>
     );
+    
+    // **NEW** Render Listing List Helper
+    const renderListingList = (listingList: Listing[]) => (
+       <div className="space-y-4 p-4"> {/* Add padding back here */}
+            {listingList.length === 0 ? (
+                <p className="text-muted-foreground">
+                    No listings found in this category{searchTerm ? " matching your search" : ""}.
+                </p>
+             ) : (
+             listingList.map((listing) => (
+                <div key={listing.id} className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 border rounded-lg hover:bg-accent">
+                    <img
+                        src={listing.image ? `http://localhost:3001${listing.image}` : "/placeholder.svg"}
+                        alt={listing.title}
+                        className="w-full md:w-20 h-16 object-cover rounded"
+                    />
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-semibold">{listing.title}</h4>
+                            <Badge variant={listing.is_rentable ? 'secondary' : 'default'}>
+                                {listing.is_rentable ? 'Rent' : 'Sale'}
+                            </Badge>
+                        </div>
+                        <p className="text-sm font-medium text-blue-600">Rs. {listing.price}</p>
+                        <p className="text-sm text-muted-foreground">Owner: {listing.owner_username} (ID: {listing.user_id})</p>
+                        <p className="text-xs text-muted-foreground">Posted: {formatDate(listing.created_at)}</p>
+                    </div>
+                    <div className="flex gap-2 self-start md:self-center">
+                        <Button variant="outline" size="sm" onClick={() => handleEditListingClick(listing)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/vehicle/${listing.id}`)}>View</Button>
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="destructive" size="sm">
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        This action cannot be undone. This will permanently delete the listing "{listing.title}"
+                                        and all associated data.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleDeleteListing(listing.id, listing.title)}>
+                                        Delete Listing
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                    </div>
+                </div>
+            )))}
+        </div>
+    );
 
 
   return (
@@ -385,7 +499,40 @@ const AdminDashboard = () => {
                 <p className="text-muted-foreground">Manage users, listings, and reports</p>
             </div>
 
-            {/* Stats Cards ... */}
+            {/* --- Stats Cards --- */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              {/* ... Stats cards ... */}
+              <Card>
+                <CardContent className="p-6 text-center">
+                  <Users className="h-8 w-8 text-blue-600 mx-auto mb-2" />
+                  <div className="text-2xl font-bold">{users.length}</div>
+                  <div className="text-muted-foreground">Total Users</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6 text-center">
+                  <Car className="h-8 w-8 text-green-600 mx-auto mb-2" />
+                  <div className="text-2xl font-bold">{listings.length}</div>
+                  <div className="text-muted-foreground">Total Listings</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6 text-center">
+                  <Flag className="h-8 w-8 text-orange-600 mx-auto mb-2" />
+                  <div className="text-2xl font-bold">{reports.length}</div>
+                  <div className="text-muted-foreground">Pending Reports</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6 text-center">
+                  <CheckCircle className="h-8 w-8 text-purple-600 mx-auto mb-2" />
+                  <div className="text-2xl font-bold">N/A</div> 
+                  <div className="text-muted-foreground">Approval Rate</div>
+                </CardContent>
+              </Card>
+            </div>
+            {/* --- End Stats Cards --- */}
+
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid w-full grid-cols-3">
@@ -394,7 +541,7 @@ const AdminDashboard = () => {
               <TabsTrigger value="reports">Reports ({reports.length})</TabsTrigger>
             </TabsList>
 
-            {/* --- **MODIFIED** Users Tab --- */}
+            {/* --- Users Tab (with nested tabs) --- */}
             <TabsContent value="users" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -403,7 +550,7 @@ const AdminDashboard = () => {
                     <div className="w-64 relative">
                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                       <Input
-                        placeholder="Search users by name or email..."
+                        placeholder="Search users..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="pl-9"
@@ -411,10 +558,9 @@ const AdminDashboard = () => {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="p-0"> {/* Remove padding to allow nested tabs to fill */}
+                <CardContent className="p-0">
                    {loadingUsers ? <div className="p-4">Loading users...</div> :
                    (
-                    // --- **NEW** Nested Tabs for User Roles ---
                     <Tabs value={activeUserTab} onValueChange={setActiveUserTab} className="w-full">
                        <TabsList className="grid w-full grid-cols-3 rounded-none border-b">
                            <TabsTrigger value="sellers">Sellers ({sellers.length})</TabsTrigger>
@@ -422,26 +568,17 @@ const AdminDashboard = () => {
                            <TabsTrigger value="admins">Admins ({admins.length})</TabsTrigger>
                        </TabsList>
                        
-                       <TabsContent value="sellers">
-                           {renderUserList(sellers)}
-                       </TabsContent>
-                       
-                       <TabsContent value="buyers">
-                           {renderUserList(buyers)}
-                       </TabsContent>
-
-                       <TabsContent value="admins">
-                           {renderUserList(admins)}
-                       </TabsContent>
+                       <TabsContent value="sellers"> {renderUserList(sellers)} </TabsContent>
+                       <TabsContent value="buyers"> {renderUserList(buyers)} </TabsContent>
+                       <TabsContent value="admins"> {renderUserList(admins)} </TabsContent>
                     </Tabs>
                    )}
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* Listings Tab */}
+            {/* --- **MODIFIED** Listings Tab --- */}
             <TabsContent value="listings" className="space-y-6">
-                {/* ... Listings content remains the same ... */}
                 <Card>
                     <CardHeader>
                         <div className="flex justify-between items-center">
@@ -457,55 +594,26 @@ const AdminDashboard = () => {
                             </div>
                         </div>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="p-0"> {/* Remove padding for nested tabs */}
                         <div className="space-y-4">
-                            {loadingListings ? <p>Loading listings...</p> :
-                                filteredListings.length === 0 ? <p>No listings found matching your search.</p> :
-                                filteredListings.map((listing) => (
-                                <div key={listing.id} className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 border rounded-lg hover:bg-accent">
-                                    <img
-                                        src={listing.image ? `http://localhost:3001${listing.image}` : "/placeholder.svg"}
-                                        alt={listing.title}
-                                        className="w-full md:w-20 h-16 object-cover rounded"
-                                    />
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <h4 className="font-semibold">{listing.title}</h4>
-                                            <Badge variant={listing.is_rentable ? 'secondary' : 'default'}>
-                                                {listing.is_rentable ? 'Rent' : 'Sale'}
-                                            </Badge>
-                                        </div>
-                                        <p className="text-sm font-medium text-blue-600">Rs. {listing.price}</p>
-                                        <p className="text-sm text-muted-foreground">Owner: {listing.owner_username} (ID: {listing.user_id})</p>
-                                        <p className="text-xs text-muted-foreground">Posted: {formatDate(listing.created_at)}</p>
-                                    </div>
-                                    <div className="flex gap-2 self-start md:self-center">
-                                        <Button variant="outline" size="sm" onClick={() => navigate(`/vehicle/${listing.id}`)}>View</Button>
-                                        <AlertDialog>
-                                            <AlertDialogTrigger asChild>
-                                                <Button variant="destructive" size="sm">
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </AlertDialogTrigger>
-                                            <AlertDialogContent>
-                                                <AlertDialogHeader>
-                                                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                                    <AlertDialogDescription>
-                                                        This action cannot be undone. This will permanently delete the listing "{listing.title}"
-                                                        and all associated data.
-                                                    </AlertDialogDescription>
-                                                </AlertDialogHeader>
-                                                <AlertDialogFooter>
-                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={() => handleDeleteListing(listing.id, listing.title)}>
-                                                        Delete Listing
-                                                    </AlertDialogAction>
-                                                </AlertDialogFooter>
-                                            </AlertDialogContent>
-                                        </AlertDialog>
-                                    </div>
-                                </div>
-                            ))}
+                            {loadingListings ? <p className="p-4">Loading listings...</p> :
+                                (
+                                // **NEW** Nested Tabs for Listings
+                                <Tabs value={activeListingTab} onValueChange={setActiveListingTab} className="w-full">
+                                    <TabsList className="grid w-full grid-cols-2 rounded-none border-b">
+                                        <TabsTrigger value="forSale">For Sale ({listingsForSale.length})</TabsTrigger>
+                                        <TabsTrigger value="forRent">For Rent ({listingsForRent.length})</TabsTrigger>
+                                    </TabsList>
+                                    
+                                    <TabsContent value="forSale">
+                                        {renderListingList(listingsForSale)}
+                                    </TabsContent>
+                                    
+                                    <TabsContent value="forRent">
+                                        {renderListingList(listingsForRent)}
+                                    </TabsContent>
+                                </Tabs>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
@@ -515,16 +623,17 @@ const AdminDashboard = () => {
             <TabsContent value="reports" className="space-y-6">
                  <Card>
                     <CardHeader><CardTitle>Reports</CardTitle></CardHeader>
-                    <CardContent><p>Report management UI will be built here.</p></CardContent>
-                </Card>
+                    <CardContent><p>Report management UI will be built here. (Found {reports.length})</p></CardContent>
+                 </Card>
             </TabsContent>
           </Tabs>
         </div>
       </div>
 
-      {/* --- **MODIFIED** Edit User Dialog --- */}
+      {/* --- Edit User Dialog --- */}
        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-            <DialogContent className="sm:max-w-[425px]">
+           <DialogContent className="sm:max-w-[425px]">
+                {/* ... Edit User Dialog (no change) ... */}
                 <DialogHeader>
                     <DialogTitle>Edit User: {editingUser?.username}</DialogTitle>
                     <DialogDescription>
@@ -533,52 +642,25 @@ const AdminDashboard = () => {
                 </DialogHeader>
                 {editingUser && (
                     <div className="grid gap-4 py-4">
-                        {/* ID (Readonly) */}
                         <div className="grid grid-cols-4 items-center gap-4">
                             <Label htmlFor="id" className="text-right">ID</Label>
                             <Input id="id" value={editingUser.id} readOnly className="col-span-3 bg-muted" />
                         </div>
-                        {/* Username */}
                         <div className="grid grid-cols-4 items-center gap-4">
                             <Label htmlFor="username" className="text-right">Username</Label>
-                            <Input
-                                id="username" // **FIX:** Changed ID to match state key
-                                value={editingUser.username}
-                                onChange={handleEditInputChange}
-                                className="col-span-3"
-                                // **FIX:** Removed readOnly
-                            />
+                            <Input id="username" value={editingUser.username} onChange={handleEditInputChange} className="col-span-3"/>
                         </div>
-                        {/* Email */}
                         <div className="grid grid-cols-4 items-center gap-4">
                             <Label htmlFor="email" className="text-right">Email</Label>
-                            <Input
-                                id="email" // **FIX:** Changed ID to match state key
-                                type="email"
-                                value={editingUser.email}
-                                onChange={handleEditInputChange}
-                                className="col-span-3"
-                                // **FIX:** Removed readOnly
-                            />
+                            <Input id="email" type="email" value={editingUser.email} onChange={handleEditInputChange} className="col-span-3"/>
                         </div>
-                        {/* Phone */}
                         <div className="grid grid-cols-4 items-center gap-4">
                             <Label htmlFor="phone" className="text-right">Phone</Label>
-                            <Input
-                                id="phone" // **FIX:** Changed ID to match state key
-                                value={editingUser.phone || ""}
-                                onChange={handleEditInputChange}
-                                className="col-span-3"
-                                // **FIX:** Removed readOnly
-                            />
+                            <Input id="phone" value={editingUser.phone || ""} onChange={handleEditInputChange} className="col-span-3"/>
                         </div>
-                        {/* Role */}
                         <div className="grid grid-cols-4 items-center gap-4">
                             <Label htmlFor="role" className="text-right">Role</Label>
-                            <Select
-                                value={editingUser.role}
-                                onValueChange={handleEditRoleChange}
-                            >
+                            <Select value={editingUser.role} onValueChange={handleEditRoleChange}>
                                 <SelectTrigger id="role" className="col-span-3">
                                     <SelectValue placeholder="Select role" />
                                 </SelectTrigger>
@@ -596,6 +678,113 @@ const AdminDashboard = () => {
                         <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>Cancel</Button>
                     </DialogClose>
                     <Button type="button" onClick={handleSaveUser}>Save changes</Button>
+                </DialogFooter>
+            </DialogContent>
+       </Dialog>
+
+       {/* --- **MODIFIED** Edit Listing Dialog --- */}
+       <Dialog open={isEditListingDialogOpen} onOpenChange={setIsEditListingDialogOpen}>
+            {/* **FIX:** Added scrollable styles */}
+            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle>Edit Listing: {editingListing?.title}</DialogTitle>
+                    <DialogDescription>
+                        Modify listing details below. Click save when you're done.
+                    </DialogDescription>
+                </DialogHeader>
+                {editingListing && (
+                    <div className="grid gap-4 py-4">
+                        
+                        {/* **NEW:** Image Preview */}
+                        <div className="w-full h-48 mb-2">
+                          <img
+                            src={editingListing.image ? `http://localhost:3001${editingListing.image}` : "/placeholder.svg"}
+                            alt={editingListing.title}
+                            className="w-full h-full object-cover rounded"
+                          />
+                        </div>
+
+                        {/* Title */}
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="title" className="text-right">Title</Label>
+                            <Input id="title" value={editingListing.title} onChange={handleEditListingInputChange} className="col-span-3"/>
+                        </div>
+                        {/* Description */}
+                        <div className="grid grid-cols-4 items-start gap-4">
+                            <Label htmlFor="description" className="text-right pt-2">Description</Label>
+                            <Textarea id="description" value={editingListing.description} onChange={handleEditListingInputChange} className="col-span-3" rows={4}/>
+                        </div>
+                        {/* Price */}
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="price" className="text-right">Price (Rs.)</Label>
+                            <Input id="price" type="number" value={editingListing.price} onChange={handleEditListingInputChange} className="col-span-3"/>
+                        </div>
+                         {/* Make */}
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="make" className="text-right">Make</Label>
+                            <Input id="make" value={editingListing.make} onChange={handleEditListingInputChange} className="col-span-3"/>
+                        </div>
+                         {/* Model */}
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="model" className="text-right">Model</Label>
+                            <Input id="model" value={editingListing.model} onChange={handleEditListingInputChange} className="col-span-3"/>
+                        </div>
+                         {/* Year */}
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="year" className="text-right">Year</Label>
+                            <Input id="year" type="number" value={editingListing.year} onChange={handleEditListingInputChange} className="col-span-3"/>
+                        </div>
+                         {/* Mileage */}
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="mileage" className="text-right">Mileage (km)</Label>
+                            <Input id="mileage" type="number" value={editingListing.mileage} onChange={handleEditListingInputChange} className="col-span-3"/>
+                        </div>
+                        {/* Location */}
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="location" className="text-right">Location</Label>
+                            <Input id="location" value={editingListing.location} onChange={handleEditListingInputChange} className="col-span-3"/>
+                        </div>
+                        {/* Fuel Type */}
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="fuel_type" className="text-right">Fuel Type</Label>
+                            <Select value={editingListing.fuel_type} onValueChange={(value) => handleEditListingSelectChange('fuel_type', value)}>
+                                <SelectTrigger id="fuel_type" className="col-span-3">
+                                    <SelectValue placeholder="Select fuel type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="Petrol">Petrol</SelectItem>
+                                    <SelectItem value="Diesel">Diesel</SelectItem>
+                                    <SelectItem value="Electric">Electric</SelectItem>
+                                    <SelectItem value="Hybrid">Hybrid</SelectItem>
+                                    <SelectItem value="Other">Other</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        {/* Transmission */}
+                         <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="transmission" className="text-right">Transmission</Label>
+                            <Select value={editingListing.transmission} onValueChange={(value) => handleEditListingSelectChange('transmission', value)}>
+                                <SelectTrigger id="transmission" className="col-span-3">
+                                    <SelectValue placeholder="Select transmission" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="Manual">Manual</SelectItem>
+                                    <SelectItem value="Automatic">Automatic</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        {/* For Rent */}
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="is_rentable" className="text-right">For Rent</Label>
+                            <Switch id="is_rentable" checked={editingListing.is_rentable} onCheckedChange={handleEditListingSwitchChange} />
+                        </div>
+                    </div>
+                )}
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button type="button" variant="outline" onClick={() => setEditingListing(null)}>Cancel</Button>
+                    </DialogClose>
+                    <Button type="button" onClick={handleSaveListing}>Save changes</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
