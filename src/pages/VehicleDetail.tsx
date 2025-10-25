@@ -1,7 +1,8 @@
 // src/pages/VehicleDetail.tsx
 
 import { useState, useEffect } from "react";
-import { Car, MapPin, Fuel, Gauge, Calendar, MessageCircle, Phone, Key, DollarSign, User, Mail } from "lucide-react";
+// **Import Flag icon**
+import { Car, MapPin, Fuel, Gauge, Calendar, MessageCircle, Phone, Key, DollarSign, User, Mail, Flag } from "lucide-react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import ChatModal from "@/components/ChatModal";
 import { useToast } from "@/hooks/use-toast";
 
-// Interface for the detailed vehicle object - NOW MATCHES FIXED BACKEND
+// Interface for the detailed vehicle object
 interface VehicleDetails {
     id: number;
     title: string;
@@ -20,23 +21,21 @@ interface VehicleDetails {
     model: string;
     year: number;
     condition: string;
-    price: number | string | null; // Expect raw value
-    mileage: number | string | null; // Expect raw value
+    price: number | string | null;
+    mileage: number | string | null;
     fuel_type: string;
     transmission: string;
     location: string;
     is_rentable: boolean;
-    images: { id: number; image_url: string }[]; // Expect objects with full URLs
+    images: { id: number; image_url: string }[];
     created_at: string;
-    // Seller info directly on the object
     seller_name: string;
     seller_phone: string;
     seller_email: string;
     seller_id: number;
-    // seller_role?: string; // Add if API provides it
 }
 
-// Interface for the seller object we might construct for display
+// Interface for the seller object
 interface SellerInfo {
     id: number;
     name: string;
@@ -54,9 +53,10 @@ const VehicleDetail = () => {
     const [loading, setLoading] = useState(true);
     const [mainImage, setMainImage] = useState<string | undefined>(undefined);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [loggedInUserId, setLoggedInUserId] = useState<number | null>(null); // **NEW**
 
-    // Function to log the view (remains the same)
-    const logVehicleView = async (vehicleId: string) => {
+    // Function to log the view
+    const logVehicleView = async (vehicleId: string) => { /* ... logVehicleView (no change) ... */
         const token = localStorage.getItem('token');
         if (!token || !vehicleId || isNaN(parseInt(vehicleId, 10))) return;
 
@@ -81,6 +81,23 @@ const VehicleDetail = () => {
     useEffect(() => {
         const token = localStorage.getItem('token');
         setIsLoggedIn(!!token);
+        
+        // **NEW: Fetch user profile to check ID against seller ID**
+        const fetchProfile = async () => {
+          if (token) {
+            try {
+              const res = await fetch('http://localhost:3001/api/profile', {
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (res.ok) {
+                const profile = await res.json();
+                setLoggedInUserId(profile.id);
+              }
+            } catch (error) {
+              console.error("Failed to fetch profile", error);
+            }
+          }
+        };
 
         const fetchVehicle = async () => {
             setLoading(true);
@@ -89,21 +106,14 @@ const VehicleDetail = () => {
                 if (!response.ok) {
                     throw new Error(`Listing not found or failed to fetch (Status: ${response.status})`);
                 }
-                // Data should now match VehicleDetails directly
                 const data: VehicleDetails = await response.json();
+                setVehicle(data);
 
-                // ++ FIX: No need to reformat price/mileage here if backend sends raw
-                // ++ FIX: No need to reconstruct seller object here
-
-                setVehicle(data); // Set the raw data
-
-                // Set the main image using the full URL from the images array
                 const firstImageUrl = data.images && data.images.length > 0
-                    ? data.images[0].image_url // Use the full URL directly
+                    ? data.images[0].image_url
                     : "/placeholder.svg";
                 setMainImage(firstImageUrl);
 
-                // Log view after setting state
                 await logVehicleView(id!);
 
             } catch (error) {
@@ -114,23 +124,23 @@ const VehicleDetail = () => {
             }
         };
 
-        if (id && !isNaN(parseInt(id, 10))) { // Check if id is a valid number string
-          fetchVehicle();
+        if (id && !isNaN(parseInt(id, 10))) {
+          fetchProfile(); // Fetch profile
+          fetchVehicle(); // Fetch vehicle
         } else {
            toast({ title: "Error", description: "Invalid vehicle ID.", variant: "destructive" });
-           navigate('/'); // Redirect if invalid ID
+           navigate('/');
            setLoading(false);
         }
 
-    }, [id, navigate, toast]); // Dependencies
+    }, [id, navigate, toast]);
 
     // Loading State
     if (loading) {
-        return (
+        return ( /* ... Skeleton (no change) ... */
              <div className="min-h-screen">
                 <Navigation />
                 <div className="container mx-auto px-4 py-8 max-w-7xl">
-                    {/* Skeleton Structure */}
                     <Skeleton className="h-8 w-1/2 mb-6" />
                     <div className="grid md:grid-cols-3 gap-8">
                        <div className="md:col-span-2 space-y-4">
@@ -153,7 +163,7 @@ const VehicleDetail = () => {
 
     // Vehicle Not Found State
     if (!vehicle) {
-        return (
+        return ( /* ... Not Found (no change) ... */
             <div className="min-h-screen">
                 <Navigation />
                 <div className="container mx-auto px-4 py-12 text-center">
@@ -165,21 +175,22 @@ const VehicleDetail = () => {
         );
     }
 
-    // ++ FIX: Construct seller object for display HERE, before return
     const seller: SellerInfo = {
         id: vehicle.seller_id,
         name: vehicle.seller_name || 'N/A',
         phone: vehicle.seller_phone || 'N/A',
         email: vehicle.seller_email || 'N/A',
-        role: 'Seller' // Default role, adjust if API provides `seller_role`
+        role: 'Seller'
     };
     const primaryContact = seller.phone !== 'N/A' ? seller.phone : (seller.email !== 'N/A' ? seller.email : 'N/A');
     const receiverId = seller.id;
     const vehicleId = vehicle.id;
 
-    // ++ FIX: Format price and mileage HERE for display
     const displayPrice = vehicle.price ? Number(vehicle.price).toLocaleString() : 'N/A';
     const displayMileage = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km` : 'N/A';
+    
+    // **NEW: Check if the logged-in user is the seller**
+    const isSeller = loggedInUserId === vehicle.seller_id;
 
 
     return (
@@ -187,7 +198,6 @@ const VehicleDetail = () => {
             <Navigation />
             <div className="container mx-auto px-4 py-8 max-w-7xl">
 
-                {/* Title and Back Link */}
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-4xl font-bold text-gray-800">{vehicle.title}</h1>
                     <Button variant="outline" onClick={() => navigate(-1)}>Back to Listings</Button>
@@ -196,8 +206,7 @@ const VehicleDetail = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     {/* --- Left Column: Images & Description --- */}
                     <div className="md:col-span-2 space-y-6">
-
-                        {/* Main Image */}
+                        {/* ... Main Image, Thumbnails, Key Info, Description ... (no change) */}
                         <Card className="overflow-hidden shadow-lg">
                             <img
                                 src={mainImage || "/placeholder.svg"}
@@ -207,13 +216,12 @@ const VehicleDetail = () => {
                             />
                         </Card>
 
-                        {/* Thumbnails */}
                         {vehicle.images && vehicle.images.length > 0 && (
                              <div className="grid grid-cols-5 gap-3">
                                 {vehicle.images.map((img, index) => (
                                     <img
                                         key={img.id || index}
-                                        src={img.image_url} // Already the full URL
+                                        src={img.image_url}
                                         alt={`Thumbnail ${index + 1}`}
                                         className={`w-full h-16 object-cover rounded-lg cursor-pointer transition-all ${mainImage === img.image_url ? 'border-4 border-blue-600' : 'border border-gray-300'}`}
                                         onClick={() => setMainImage(img.image_url)}
@@ -223,8 +231,6 @@ const VehicleDetail = () => {
                             </div>
                         )}
 
-
-                        {/* Vehicle Info Card */}
                         <Card className="shadow-lg">
                             <CardHeader className="flex flex-row justify-between items-center">
                                 <CardTitle className="text-2xl font-bold">Key Information</CardTitle>
@@ -234,7 +240,6 @@ const VehicleDetail = () => {
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 text-gray-700">
-                                    {/* ++ FIX: Use displayMileage */}
                                     <div className="flex items-center gap-2"><Car className="h-5 w-5 text-blue-600" /> <span>Make: <b>{vehicle.make || 'N/A'}</b></span></div>
                                     <div className="flex items-center gap-2"><Car className="h-5 w-5 text-blue-600" /> <span>Model: <b>{vehicle.model || 'N/A'}</b></span></div>
                                     <div className="flex items-center gap-2"><Calendar className="h-5 w-5 text-blue-600" /> <span>Year: <b>{vehicle.year || 'N/A'}</b></span></div>
@@ -247,14 +252,12 @@ const VehicleDetail = () => {
                             </CardContent>
                         </Card>
 
-                        {/* Description */}
                         <Card className="shadow-lg">
                             <CardHeader><CardTitle>Description</CardTitle></CardHeader>
                             <CardContent>
                                 <p className="text-gray-700 leading-relaxed">{vehicle.description || 'No description provided.'}</p>
                             </CardContent>
                         </Card>
-
                     </div>
 
                     {/* --- Right Column: Seller & Price --- */}
@@ -262,9 +265,9 @@ const VehicleDetail = () => {
 
                         {/* Price Card */}
                         <Card className="bg-blue-600 text-white shadow-lg">
-                            <CardContent className="p-6 text-center">
+                           {/* ... Price Card (no change) ... */}
+                           <CardContent className="p-6 text-center">
                                 <p className="text-lg font-medium mb-1">{vehicle.is_rentable ? 'Price Per Day' : 'Selling Price'}</p>
-                                {/* ++ FIX: Use displayPrice */}
                                 <h2 className="text-4xl font-extrabold mb-4">Rs. {displayPrice}</h2>
                                 <Button className="w-full bg-white text-blue-600 hover:bg-gray-100 font-semibold py-6 text-lg">
                                     <DollarSign className="h-5 w-5 mr-2" /> {vehicle.is_rentable ? 'Book Now' : 'Make an Offer'}
@@ -276,7 +279,6 @@ const VehicleDetail = () => {
                         <Card className="shadow-lg">
                             <CardHeader><CardTitle>Seller Details</CardTitle></CardHeader>
                             <CardContent className="space-y-4">
-                                {/* Use constructed seller object for display */}
                                 <div className="flex items-center gap-3">
                                     <User className="h-8 w-8 text-orange-600" />
                                     <div>
@@ -296,17 +298,20 @@ const VehicleDetail = () => {
                                 </div>
 
                                 {isLoggedIn ? (
-                                    <ChatModal
-                                        sellerName={seller.name}
-                                        vehicleTitle={vehicle.title}
-                                        sellerContact={primaryContact} // Use the declared constant
-                                        initialReceiverId={receiverId}
-                                        initialVehicleId={vehicleId}
-                                    >
-                                        <Button className="w-full bg-orange-500 hover:bg-orange-600">
-                                            <MessageCircle className="h-5 w-5 mr-2" /> Message Seller
-                                        </Button>
-                                    </ChatModal>
+                                    // **Don't show message button if user is the seller**
+                                    !isSeller && (
+                                        <ChatModal
+                                            sellerName={seller.name}
+                                            vehicleTitle={vehicle.title}
+                                            sellerContact={primaryContact}
+                                            initialReceiverId={receiverId}
+                                            initialVehicleId={vehicleId}
+                                        >
+                                            <Button className="w-full bg-orange-500 hover:bg-orange-600">
+                                                <MessageCircle className="h-5 w-5 mr-2" /> Message Seller
+                                            </Button>
+                                        </ChatModal>
+                                    )
                                 ) : (
                                     <Link to="/login">
                                         <Button className="w-full bg-orange-500 hover:bg-orange-600">
@@ -314,6 +319,20 @@ const VehicleDetail = () => {
                                         </Button>
                                     </Link>
                                 )}
+                                
+                                {/* **NEW: Report Listing Button** */}
+                                {isLoggedIn && !isSeller && (
+                                  <Link to={`/report/${vehicle.id}`} className="mt-2 block">
+                                      <Button variant="outline" className="w-full">
+                                          <Flag className="h-4 w-4 mr-2 text-destructive" />
+                                          Report this Listing
+                                      </Button>
+                                  </Link>
+                                )}
+                                {isLoggedIn && isSeller && (
+                                    <p className="text-sm text-center text-gray-500 mt-2">This is your listing.</p>
+                                )}
+
                             </CardContent>
                         </Card>
 

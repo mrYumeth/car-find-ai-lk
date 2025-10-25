@@ -1,230 +1,213 @@
-import { useState } from "react";
-import { Flag, Upload, AlertCircle } from "lucide-react";
+// src/pages/ReportListing.tsx
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
-import Navigation from "@/components/Navigation";
-import { useNavigate } from "react-router-dom";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+// Simplified vehicle interface for this page
+interface VehicleStub {
+  id: number;
+  title: string;
+  seller_id: number;
+  image?: string; // Expecting the full URL
+}
 
 const ReportListing = () => {
+  const { id: vehicleId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [vehicle, setVehicle] = useState<VehicleStub | null>(null);
   const [reason, setReason] = useState("");
   const [description, setDescription] = useState("");
-  const [listingId, setListingId] = useState("");
-  const { toast } = useToast();
-  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loggedInUserId, setLoggedInUserId] = useState<number | null>(null);
+  const [token, setToken] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!reason || !description || !listingId) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
+  useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    if (!storedToken) {
+      toast({ title: "Error", description: "You must be logged in to report a listing.", variant: "destructive" });
+      navigate('/login');
       return;
     }
+    setToken(storedToken);
 
-    toast({
-      title: "Report Submitted",
-      description: "Thank you for your report. Our team will review it shortly.",
-    });
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // Fetch user profile to check ID
+        const profileRes = await fetch('http://localhost:3001/api/profile', {
+          headers: { 'Authorization': `Bearer ${storedToken}` }
+        });
+        if (!profileRes.ok) throw new Error("Failed to fetch user profile.");
+        const profile = await profileRes.json();
+        setLoggedInUserId(profile.id);
 
-    setTimeout(() => {
-      navigate("/");
-    }, 2000);
+        // Fetch vehicle data
+        const vehicleRes = await fetch(`http://localhost:3001/api/vehicles/${vehicleId}`);
+        if (!vehicleRes.ok) throw new Error("Failed to fetch vehicle details.");
+        const vehicleData = await vehicleRes.json();
+        
+        setVehicle({
+          id: vehicleData.id,
+          title: vehicleData.title,
+          seller_id: vehicleData.seller_id,
+          image: vehicleData.images?.[0]?.image_url || "/placeholder.svg"
+        });
+
+      } catch (error) {
+        toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+        navigate('/');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [vehicleId, navigate, toast]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason) {
+      toast({ title: "Error", description: "Please select a reason for the report.", variant: "destructive" });
+      return;
+    }
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch('http://localhost:3001/api/reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          vehicleId: parseInt(vehicleId!),
+          reason: reason,
+          description: description
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || "Failed to submit report.");
+      }
+
+      toast({ title: "Success", description: "Your report has been submitted." });
+      navigate(`/vehicle/${vehicleId}`); // Navigate back to the listing
+
+    } catch (error) {
+      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50">
-      <Navigation />
-      
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-2xl mx-auto">
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-100 rounded-full mb-4">
-              <Flag className="h-8 w-8 text-orange-600" />
-            </div>
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">Report a Listing</h1>
-            <p className="text-muted-foreground">
-              Help us maintain a safe and trustworthy marketplace
-            </p>
-          </div>
-
+  if (loading) {
+    return (
+      <div className="min-h-screen">
+        <Navigation />
+        <div className="container mx-auto px-4 py-8 max-w-2xl">
+          <Skeleton className="h-8 w-1/2 mb-4" />
+          <Skeleton className="h-6 w-1/4 mb-8" />
           <Card>
-            <CardHeader>
-              <CardTitle>Report Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Listing ID */}
-                <div className="space-y-2">
-                  <Label htmlFor="listingId">
-                    Listing ID or URL <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="listingId"
-                    placeholder="e.g., VEH-12345 or paste listing URL"
-                    value={listingId}
-                    onChange={(e) => setListingId(e.target.value)}
-                    required
-                  />
-                </div>
-
-                {/* Reason */}
-                <div className="space-y-3">
-                  <Label>
-                    Reason for Report <span className="text-destructive">*</span>
-                  </Label>
-                  <RadioGroup value={reason} onValueChange={setReason} required>
-                    <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent cursor-pointer">
-                      <RadioGroupItem value="fraudulent" id="fraudulent" />
-                      <Label htmlFor="fraudulent" className="cursor-pointer flex-1">
-                        Fraudulent or Scam Listing
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent cursor-pointer">
-                      <RadioGroupItem value="misleading" id="misleading" />
-                      <Label htmlFor="misleading" className="cursor-pointer flex-1">
-                        Misleading Information
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent cursor-pointer">
-                      <RadioGroupItem value="duplicate" id="duplicate" />
-                      <Label htmlFor="duplicate" className="cursor-pointer flex-1">
-                        Duplicate Listing
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent cursor-pointer">
-                      <RadioGroupItem value="inappropriate" id="inappropriate" />
-                      <Label htmlFor="inappropriate" className="cursor-pointer flex-1">
-                        Inappropriate Content
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent cursor-pointer">
-                      <RadioGroupItem value="stolen" id="stolen" />
-                      <Label htmlFor="stolen" className="cursor-pointer flex-1">
-                        Suspected Stolen Vehicle
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent cursor-pointer">
-                      <RadioGroupItem value="other" id="other" />
-                      <Label htmlFor="other" className="cursor-pointer flex-1">
-                        Other
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-
-                {/* Description */}
-                <div className="space-y-2">
-                  <Label htmlFor="description">
-                    Detailed Description <span className="text-destructive">*</span>
-                  </Label>
-                  <Textarea
-                    id="description"
-                    placeholder="Please provide specific details about why you're reporting this listing..."
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={6}
-                    required
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Minimum 20 characters. Be as specific as possible to help our review team.
-                  </p>
-                </div>
-
-                {/* Evidence Upload */}
-                <div className="space-y-2">
-                  <Label htmlFor="evidence">
-                    Evidence (Optional)
-                  </Label>
-                  <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer">
-                    <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground mb-1">
-                      Click to upload screenshots or documents
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      PNG, JPG, PDF up to 5MB
-                    </p>
-                    <Input
-                      id="evidence"
-                      type="file"
-                      className="hidden"
-                      accept="image/*,.pdf"
-                    />
-                  </div>
-                </div>
-
-                {/* Important Notice */}
-                <div className="flex gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-blue-900">
-                    <p className="font-medium mb-1">Important Notice</p>
-                    <p>
-                      False reports may result in account suspension. All reports are reviewed
-                      by our team within 24-48 hours.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Submit Buttons */}
-                <div className="flex gap-4">
-                  <Button
-                    type="submit"
-                    className="flex-1 bg-orange-500 hover:bg-orange-600"
-                  >
-                    Submit Report
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => navigate(-1)}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-
-          {/* FAQ Section */}
-          <Card className="mt-8">
-            <CardHeader>
-              <CardTitle className="text-lg">What happens after I submit a report?</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <h4 className="font-medium mb-1">1. Review Process</h4>
-                <p className="text-sm text-muted-foreground">
-                  Our team reviews all reports within 24-48 hours
-                </p>
-              </div>
-              <div>
-                <h4 className="font-medium mb-1">2. Investigation</h4>
-                <p className="text-sm text-muted-foreground">
-                  We investigate the reported listing and contact the seller if needed
-                </p>
-              </div>
-              <div>
-                <h4 className="font-medium mb-1">3. Action Taken</h4>
-                <p className="text-sm text-muted-foreground">
-                  Appropriate action is taken, including listing removal or seller suspension
-                </p>
-              </div>
-              <div>
-                <h4 className="font-medium mb-1">4. Notification</h4>
-                <p className="text-sm text-muted-foreground">
-                  You'll receive an email update on the outcome of your report
-                </p>
-              </div>
+            <CardHeader><Skeleton className="h-6 w-1/3" /></CardHeader>
+            <CardContent className="space-y-6">
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-10 w-1/3" />
             </CardContent>
           </Card>
         </div>
+      </div>
+    );
+  }
+  
+  // Check if user is the seller
+  const isSeller = loggedInUserId === vehicle?.seller_id;
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navigation />
+      <div className="container mx-auto px-4 py-8 max-w-2xl">
+        <h1 className="text-3xl font-bold mb-2">Report Listing</h1>
+        <p className="text-muted-foreground mb-6">You are reporting the listing:</p>
+        
+        <Link to={`/vehicle/${vehicleId}`} className="block mb-6">
+          <Card className="flex items-center gap-4 p-4 hover:bg-accent">
+            <img 
+              src={vehicle?.image} 
+              alt={vehicle?.title} 
+              className="w-24 h-16 object-cover rounded"
+            />
+            <div>
+              <h3 className="font-semibold">{vehicle?.title}</h3>
+              <p className="text-sm text-muted-foreground">Vehicle ID: {vehicle?.id}</p>
+            </div>
+          </Card>
+        </Link>
+        
+        <Card>
+          <CardHeader>
+            <CardTitle>Report Details</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isSeller ? (
+              <p className="text-red-600 font-medium">You cannot report your own listing.</p>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="reason">Reason for reporting</Label>
+                  <Select onValueChange={setReason} value={reason} required>
+                    <SelectTrigger id="reason">
+                      <SelectValue placeholder="Select a reason..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Misleading Information">Misleading Information</SelectItem>
+                      <SelectItem value="Fraudulent Listing">Fraudulent Listing</SelectItem>
+                      <SelectItem value="Item is Sold">Item is Sold</SelectItem>
+                      <SelectItem value="Spam">Spam</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description">
+                    Description (optional)
+                    <span className="text-sm text-muted-foreground ml-2">
+                      Please provide more details.
+                    </span>
+                  </Label>
+                  <Textarea
+                    id="description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="This listing is misleading because..."
+                    rows={5}
+                  />
+                </div>
+                
+                <Button type="submit" disabled={isSubmitting || loading || !reason}>
+                  {isSubmitting ? "Submitting..." : "Submit Report"}
+                </Button>
+              </form>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

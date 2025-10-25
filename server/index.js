@@ -559,6 +559,50 @@ app.put('/api/chats/:chatId/read', authenticateToken, async (req, res) => {
     }
 });
 
+// POST: Create a new report (Authenticated Users)
+app.post('/api/reports', authenticateToken, async (req, res) => {
+    const { vehicleId, reason, description } = req.body;
+    const reporterId = req.user.id;
+
+    if (!vehicleId || !reason) {
+        return res.status(400).send("Vehicle ID and reason are required.");
+    }
+
+    try {
+        // Check if the user is trying to report their own listing
+        const vehicleResult = await pool.query('SELECT user_id FROM vehicles WHERE id = $1', [vehicleId]);
+        if (vehicleResult.rows.length === 0) {
+            return res.status(404).send("Vehicle not found.");
+        }
+        if (vehicleResult.rows[0].user_id === reporterId) {
+            return res.status(403).send("You cannot report your own listing.");
+        }
+        
+        // Check if this user has already reported this vehicle
+        const existingReport = await pool.query(
+            'SELECT id FROM reports WHERE reporter_id = $1 AND vehicle_id = $2',
+            [reporterId, vehicleId]
+        );
+        
+        if (existingReport.rows.length > 0) {
+            return res.status(409).send("You have already reported this listing.");
+        }
+
+        // Create the report
+        await pool.query(
+            `INSERT INTO reports (reporter_id, vehicle_id, reason, description, created_at)
+             VALUES ($1, $2, $3, $4, NOW())`,
+            [reporterId, vehicleId, reason, description]
+        );
+
+        res.status(201).json({ message: "Report submitted successfully." });
+
+    } catch (err) {
+        console.error("[API /api/reports] Error submitting report:", err.message);
+        res.status(500).send("Server error");
+    }
+});
+
 // ++ NEW: NLP Search Endpoint
 app.get('/api/search/nlp', async (req, res) => {
     const queryText = req.query.q; // Get the natural language query (e.g., "q=Toyota CHR under 5 million")
@@ -1013,6 +1057,50 @@ app.delete('/api/admin/vehicles/:id', authenticateToken, isAdmin, async (req, re
         res.status(200).json({ message: `Vehicle ${id} deleted successfully` });
     } catch (err) {
         console.error(`[API /admin/vehicles/:id] Error deleting vehicle ${id}:`, err.message);
+        res.status(500).send("Server error");
+    }
+});
+
+// GET All Reports (Admin Only)
+app.get('/api/admin/reports', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT 
+                r.id, 
+                r.reason, 
+                r.description, 
+                r.created_at, 
+                r.vehicle_id,
+                v.title AS vehicle_title,
+                u.username AS reporter_username
+             FROM reports r
+             LEFT JOIN users u ON r.reporter_id = u.id
+             LEFT JOIN vehicles v ON r.vehicle_id = v.id
+             ORDER BY r.created_at DESC`
+        );
+        
+        // Filter out reports where the vehicle or user might have been deleted
+        const validReports = result.rows.filter(r => r.vehicle_title && r.reporter_username);
+        
+        res.json(validReports);
+    } catch (err) {
+        console.error("[API /admin/reports] Error fetching reports:", err.message);
+        res.status(500).send("Server error");
+    }
+});
+
+// DELETE a Report (Admin Only - "Dismiss")
+app.delete('/api/admin/reports/:id', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query('DELETE FROM reports WHERE id = $1 RETURNING id', [id]);
+        if (result.rowCount === 0) {
+            return res.status(404).send("Report not found.");
+        }
+        console.log(`[Admin Action] User ${req.user.id} dismissed report ${id}.`);
+        res.status(200).json({ message: `Report ${id} dismissed successfully` });
+    } catch (err) {
+        console.error(`[API /admin/reports/:id] Error dismissing report ${id}:`, err.message);
         res.status(500).send("Server error");
     }
 });
