@@ -190,12 +190,15 @@ app.get('/api/my-vehicles', authenticateToken, async (req, res) => {
     }
 });
 
-// Get ALL public vehicles (Homepage)
+// Get ALL public vehicles (Homepage & AllListings Page)
 app.get('/api/vehicles', async (req, res) => {
     try {
         const vehiclesResult = await pool.query(
-            `SELECT 
-                v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.description, v.make,
+            `SELECT
+                v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel,
+                v.is_rentable, v.description, v.make,
+                v.model, -- <<< Added v.model
+                v.year,  -- <<< Added v.year
                 u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
                 (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
              FROM vehicles v
@@ -203,28 +206,36 @@ app.get('/api/vehicles', async (req, res) => {
              ORDER BY v.created_at DESC`
         );
 
-        const vehicles = vehiclesResult.rows.map(row => ({
-            id: row.id,
-            title: row.title,
-            price: row.price ? Number(row.price).toLocaleString() : 'N/A',
-            location: row.location,
-            mileage: row.mileage ? `${row.mileage.toLocaleString()} km` : 'N/A',
-            fuel: row.fuel,
-            image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg',
-            make: row.make,
-            seller_id: row.seller_id,
-            seller_name: row.seller_name,
-            seller_phone: row.seller_phone,
-            seller_email: row.seller_email,
-            is_rentable: row.is_rentable,
-            rating: 4.5 
-        }));
+        // Use the corrected helper function below
+        const vehicles = formatVehicleResults(vehiclesResult.rows);
         res.json(vehicles);
     } catch (err) {
         console.error("Error fetching all vehicles:", err.message);
         res.status(500).send("Server error when fetching vehicles: " + err.message);
     }
 });
+
+// Helper function for formatting results (ensure it includes model and year)
+function formatVehicleResults(rows) {
+  return rows.map(row => ({
+      id: row.id || 0,
+      title: row.title || 'N/A',
+      price: row.price ? Number(row.price).toLocaleString() : 'N/A',
+      location: row.location || 'N/A',
+      mileage: row.mileage ? `${row.mileage.toLocaleString()} km` : 'N/A',
+      fuel: row.fuel || row.fuel_type || 'N/A', // Map fuel_type if necessary
+      image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg',
+      make: row.make || 'N/A',
+      model: row.model || 'N/A', // <<< Added model mapping
+      year: row.year || null,   // <<< Added year mapping
+      seller_id: row.seller_id || 0,
+      seller_name: row.seller_name || 'N/A',
+      seller_phone: row.seller_phone || 'N/A',
+      seller_email: row.seller_email || 'N/A',
+      is_rentable: row.is_rentable || false,
+      rating: 4.5 // Placeholder rating
+  }));
+}
 
 // Get single vehicle for (Edit Page - Authenticated)
 app.get('/api/edit-vehicle/:id', authenticateToken, async (req, res) => {
