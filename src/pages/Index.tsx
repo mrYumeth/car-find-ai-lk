@@ -277,9 +277,19 @@ const Index = () => {
                 {renderVehicleList(vehiclesForRent, "Vehicles For Rent", "Find short-term rentals for your travel needs.", true, "rent", loading)}
                 {/* View All / Clear Search Button */}
                 <div className="text-center mt-12">
-                   {searchPerformed && searchResults !== null ? ( <Button onClick={fetchAllVehicles} variant="outline" className="px-8 py-3 text-lg">Clear Search Results</Button> ) : ( <Button className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-lg">View All Listings</Button> )}
+                  {searchPerformed && searchResults !== null ? (
+                    <Button onClick={fetchAllVehicles} variant="outline" className="px-8 py-3 text-lg">
+                      Clear Search Results
+                    </Button>
+                  ) : (
+                    // --- CHANGE THIS BUTTON TO A LINK ---
+                    <Link to="/listings">
+                      <Button className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-lg">
+                        View All Listings
+                      </Button>
+                    </Link>
+                  )}
                 </div>
-            </div>
 
             {/* How It Works */}
              <div className="bg-gray-50 py-20">
@@ -307,7 +317,7 @@ const Index = () => {
                         </div>
                     </div>
                 </div>
-            </div>
+            </div></div>
 
 
             {/* Call to Action */}
