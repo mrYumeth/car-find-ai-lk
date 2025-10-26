@@ -43,8 +43,8 @@ interface Vehicle {
   rating: number;
   is_rentable: boolean;
   make: string;
-  model: string; // <<< Added model
-  year: number | null; // <<< Added year (can be null)
+  model: string; 
+  year: number | null;
 }
 
 // Interface for extracted entities (no change)
@@ -79,19 +79,19 @@ const AllListings = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [searchResults, setSearchResults] = useState<Vehicle[] | null>(null);
   const [searchPerformed, setSearchPerformed] = useState(false);
-  const [selectedMake, setSelectedMake] = useState<string>("");
-  const [modelFilter, setModelFilter] = useState<string>("");
+  const [selectedMake, setSelectedMake] = useState<string>(""); 
+  const [modelFilter, setModelFilter] = useState<string>(""); 
 
   // **MODIFIED**: Helper to format data
   const formatVehicleData = (vehicleData: any[]): Vehicle[] => {
     return vehicleData.map(v => ({
             id: v.id || 0,
             title: v.title || 'N/A',
-            price: v.price || 'N/A', // Assuming backend formats price now
+            price: v.price || 'N/A',
             location: v.location || 'N/A',
-            mileage: v.mileage || 'N/A', // Assuming backend formats mileage
+            mileage: v.mileage || 'N/A',
             fuel: v.fuel || v.fuel_type || 'N/A',
-            image: v.image || '/placeholder.svg', // Assuming backend sends full URL or path
+            image: v.image || '/placeholder.svg',
             seller_name: v.seller_name || 'N/A',
             seller_id: v.seller_id || 0,
             seller_phone: v.seller_phone || 'N/A',
@@ -99,8 +99,8 @@ const AllListings = () => {
             rating: v.rating || 0,
             is_rentable: v.is_rentable || false,
             make: v.make || 'N/A',
-            model: v.model || 'N/A',   // <<< Added model mapping
-            year: v.year || null,     // <<< Added year mapping
+            model: v.model || 'N/A',
+            year: v.year || null,
         }));
   };
 
@@ -116,7 +116,7 @@ const AllListings = () => {
       const response = await fetch('http://localhost:3001/api/vehicles');
       if (!response.ok) throw new Error('Failed to fetch vehicles');
       const data = await response.json();
-      const formattedData = formatVehicleData(data); // Use updated formatter
+      const formattedData = formatVehicleData(data);
       _setAllListings(formattedData);
     } catch (error) {
       console.error("Error fetching vehicles:", error);
@@ -159,6 +159,7 @@ const AllListings = () => {
 
   // Handle NLP search submission (no change)
   const handleSearch = async () => {
+    // ... handleSearch logic ...
     if (!searchTerm.trim()) {
         fetchAllVehicles();
         return;
@@ -169,8 +170,7 @@ const AllListings = () => {
     setSelectedMake("");
     setModelFilter("");
 
-    // ... rest of NLP search logic ...
-        let entitiesForLogging: ExtractedEntities | null = null;
+    let entitiesForLogging: ExtractedEntities | null = null;
     try {
         const entityResponse = await fetch(`http://localhost:5000/parse?query=${encodeURIComponent(searchTerm)}`);
         if (entityResponse.ok) {
@@ -194,7 +194,7 @@ const AllListings = () => {
                 toast({ title: "No Results", description: `No vehicles found matching "${searchTerm}".`, variant: "default" });
             }
         }
-        setSearchResults(formatVehicleData(data)); // Use updated formatter
+        setSearchResults(formatVehicleData(data));
         setCurrentPageSale(1);
         setCurrentPageRent(1);
     } catch (error) {
@@ -209,7 +209,7 @@ const AllListings = () => {
    // Handle Enter key press in search input (no change)
    const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { handleSearch(); } };
 
-  // Determine lists based on search *and* filters
+  // Determine lists based on search *and* filters (no change)
   const getFilteredList = () => {
       if (searchPerformed && searchResults !== null) {
           return searchResults;
@@ -219,7 +219,6 @@ const AllListings = () => {
           results = results.filter(v => v.make === selectedMake);
       }
       if (modelFilter) {
-          // Use optional chaining for safety in case model is unexpectedly null/undefined
           results = results.filter(v => v.model?.toLowerCase().includes(modelFilter.toLowerCase()));
       }
       return results;
@@ -230,7 +229,7 @@ const AllListings = () => {
   const listingsForSale = currentFilteredList.filter(l => !l.is_rentable);
   const listingsForRent = currentFilteredList.filter(l => l.is_rentable);
 
-   // Reset pagination when filters change
+   // Reset pagination when filters change (no change)
    useEffect(() => {
     setCurrentPageSale(1);
     setCurrentPageRent(1);
@@ -239,10 +238,10 @@ const AllListings = () => {
         setSearchResults(null);
         setSearchTerm("");
     }
-   }, [selectedMake, modelFilter, searchPerformed]); // Added searchPerformed dependency
+   }, [selectedMake, modelFilter, searchPerformed]);
 
 
-  // Pagination Logic (no change conceptually)
+  // Pagination Logic (no change)
   const totalPagesSale = Math.ceil(listingsForSale.length / ITEMS_PER_PAGE);
   const startIndexSale = (currentPageSale - 1) * ITEMS_PER_PAGE;
   const currentListingsSale = listingsForSale.slice(startIndexSale, startIndexSale + ITEMS_PER_PAGE);
@@ -317,7 +316,7 @@ const AllListings = () => {
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-4xl font-bold text-gray-800 mb-8 text-center">All Vehicle Listings</h1>
 
-        {/* Search and Filter Bar */}
+        {/* **MODIFIED**: Search and Filter Bar */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-8 sticky top-20 z-40">
            <div className="flex flex-col md:flex-row gap-4 items-center">
                 {/* NLP Search */}
@@ -339,12 +338,13 @@ const AllListings = () => {
 
                 {/* Make Dropdown */}
                  <div className="w-full md:w-auto">
+                     {/* **FIXED**: Set value to `selectedMake` and use placeholder in SelectValue */}
                      <Select value={selectedMake} onValueChange={setSelectedMake}>
                          <SelectTrigger className="h-12 w-full md:w-[180px]">
                              <SelectValue placeholder="Any Make" />
                          </SelectTrigger>
                          <SelectContent>
-                             <SelectItem value="">Any Make</SelectItem>
+                             {/* **FIXED**: Removed the item with value="" */}
                              {vehicleMakes.map(make => (
                                  <SelectItem key={make} value={make}>{make}</SelectItem>
                              ))}
@@ -372,6 +372,7 @@ const AllListings = () => {
 
         {/* Tabs for Sale/Rent (structure remains the same) */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          {/* ... TabsList ... */}
           <TabsList className="grid w-full grid-cols-2 mb-8">
             <TabsTrigger value="forSale">For Sale ({listingsForSale.length})</TabsTrigger>
             <TabsTrigger value="forRent">For Rent ({listingsForRent.length})</TabsTrigger>
@@ -379,8 +380,9 @@ const AllListings = () => {
 
           {/* For Sale Tab Content */}
           <TabsContent value="forSale">
+            {/* ... Sale rendering logic ... */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-              {loading ? ( /* Skeletons */
+              {loading ? (
                  Array(ITEMS_PER_PAGE).fill(0).map((_, index) => (
                     <Card key={`skel-sale-${index}`} className="overflow-hidden">
                         <Skeleton className="w-full h-48" />
@@ -390,11 +392,11 @@ const AllListings = () => {
                         </CardContent>
                     </Card>
                  ))
-              ) : currentListingsSale.length > 0 ? ( /* Sale Listings */
+              ) : currentListingsSale.length > 0 ? (
                 currentListingsSale.map((vehicle) => (
                   <VehicleCard key={`sale-${vehicle.id}`} vehicle={vehicle} isLoggedIn={isLoggedIn} />
                 ))
-              ) : ( /* Empty State for Sale */
+              ) : (
                 <div className="col-span-full text-center py-20">
                   <Car className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-xl text-gray-600">No vehicles found for sale{searchTerm || selectedMake || modelFilter ? " matching your criteria" : ""}.</p>
@@ -406,8 +408,9 @@ const AllListings = () => {
 
           {/* For Rent Tab Content */}
           <TabsContent value="forRent">
+            {/* ... Rent rendering logic ... */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-              {loading ? ( /* Skeletons */
+              {loading ? (
                  Array(ITEMS_PER_PAGE).fill(0).map((_, index) => (
                     <Card key={`skel-rent-${index}`} className="overflow-hidden">
                         <Skeleton className="w-full h-48" />
@@ -417,11 +420,11 @@ const AllListings = () => {
                         </CardContent>
                     </Card>
                  ))
-              ) : currentListingsRent.length > 0 ? ( /* Rent Listings */
+              ) : currentListingsRent.length > 0 ? (
                 currentListingsRent.map((vehicle) => (
                   <VehicleCard key={`rent-${vehicle.id}`} vehicle={vehicle} isLoggedIn={isLoggedIn} />
                 ))
-              ) : ( /* Empty State for Rent */
+              ) : (
                 <div className="col-span-full text-center py-20">
                   <Car className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-xl text-gray-600">No vehicles found for rent{searchTerm || selectedMake || modelFilter ? " matching your criteria" : ""}.</p>
