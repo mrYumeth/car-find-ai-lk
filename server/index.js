@@ -572,6 +572,27 @@ app.put('/api/chats/:chatId/read', authenticateToken, async (req, res) => {
     }
 });
 
+// +++ NEW: GET total unread message count +++
+app.get('/api/chats/unread-count', authenticateToken, async (req, res) => {
+    const userId = req.user.id;
+    try {
+        const countResult = await pool.query(
+            `SELECT COUNT(m.*) AS unread_total
+             FROM messages m
+             JOIN chats c ON m.chat_id = c.id
+             WHERE m.is_read = FALSE
+               AND m.sender_id != $1 -- Don't count user's own messages
+               AND (c.buyer_id = $1 OR c.seller_id = $1) -- Only count in user's chats`,
+            [userId]
+        );
+        const unreadCount = parseInt(countResult.rows[0].unread_total || '0', 10);
+        res.json({ unreadCount });
+    } catch (err) {
+        console.error("Error fetching unread message count:", err.message);
+        res.status(500).send("Server error fetching unread count");
+    }
+});
+
 // POST: Create a new report (Authenticated Users)
 app.post('/api/reports', authenticateToken, async (req, res) => {
     const { vehicleId, reason, description } = req.body;
