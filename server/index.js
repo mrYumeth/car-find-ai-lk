@@ -1164,6 +1164,40 @@ app.get('/api/admin/reports/all-listings', authenticateToken, isAdmin, async (re
     }
 });
 
+// GET: Listings by Seller Report
+app.get('/api/admin/reports/listings-by-seller/:userId', authenticateToken, isAdmin, async (req, res) => {
+    const { userId } = req.params;
+    if (!userId) {
+        return res.status(400).send("User ID is required.");
+    }
+
+    try {
+        const result = await pool.query(
+            `SELECT 
+                v.id AS listing_id, 
+                v.title, 
+                v.price, 
+                v.make, 
+                v.model, 
+                v.year,
+                v.is_rentable,
+                v.created_at AS listed_on,
+                u.id AS user_id, 
+                u.username AS seller_username
+             FROM vehicles v
+             JOIN users u ON v.user_id = u.id
+             WHERE v.user_id = $1 -- Filter by the specific user ID
+             ORDER BY v.created_at DESC`,
+            [userId]
+        );
+        // We don't need to check for rowCount === 0, an empty array is a valid report
+        res.json(result.rows);
+    } catch (err) {
+        console.error("[API /api/admin/reports/listings-by-seller] Error:", err.message);
+        res.status(500).send("Server error");
+    }
+});
+
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });

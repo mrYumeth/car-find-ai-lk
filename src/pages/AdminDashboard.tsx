@@ -1,8 +1,7 @@
 // src/pages/AdminDashboard.tsx
 import React, { useState, useEffect } from "react";
 // **Import Download icon**
-import { Users, Car, Flag, CheckCircle, Edit, Trash2, Search, AlertTriangle, Check, Download } from "lucide-react"; // Added Download
-import { Button } from "@/components/ui/button";
+import { Users, Car, Flag, CheckCircle, Edit, Trash2, Search, AlertTriangle, Check, Download, FileText } from "lucide-react";import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -117,6 +116,8 @@ const AdminDashboard = () => {
   const [editingListing, setEditingListing] = useState<EditingListingState | null>(null);
   const [isReportDownloading, setIsReportDownloading] = useState<string | null>(null); // Track which report is downloading
 
+  // **NEW**: State for the seller report dropdown
+  const [selectedSellerId, setSelectedSellerId] = useState<string>("");
 
   // --- Fetch Users Function ---
   const fetchUsers = async () => { /* ... fetchUsers ... */
@@ -381,20 +382,21 @@ const AdminDashboard = () => {
   /**
    * Generates and downloads a PDF report from fetched data.
    */
-  const handleGenerateReport = async (reportType: 'user-registrations' | 'all-listings' | 'reported-listings') => {
-    setIsReportDownloading(reportType); // Set which report is downloading
-    const token = localStorage.getItem('token');
-    if (!token) {
-        toast({ title: "Error", description: "Authentication token missing.", variant: "destructive" });
-        setIsReportDownloading(null);
-        return;
-    }
+  const handleGenerateReport = async (reportType: 'user-registrations' | 'all-listings' | 'reported-listings' | 'listings-by-seller') => {
+      setIsReportDownloading(reportType);
+      const token = localStorage.getItem('token');
+      if (!token) {
+          toast({ title: "Error", description: "Authentication token missing.", variant: "destructive" });
+          setIsReportDownloading(null);
+          return;
+      }
 
     console.log(`Generating report: ${reportType}`);
     let endpoint = '';
     let reportTitle = '';
     let tableHeaders: string[] = [];
     let tableDataExtractor: (item: any) => string[];
+    let sellerName = ""; // Variable to hold seller name for the report
 
     // Configure based on report type
     switch (reportType) {
@@ -438,6 +440,24 @@ const AdminDashboard = () => {
           report.description || '-', // Handle optional description
           report.reporter_username,
           formatDate(report.created_at)
+        ];
+        break;
+        // **NEW CASE**
+      case 'listings-by-seller':
+        if (!selectedSellerId) {
+            toast({ title: "Error", description: "Please select a seller first.", variant: "destructive" });
+            setIsReportDownloading(null);
+            return;
+        }
+        // Find the seller's name from the users state
+        sellerName = users.find(u => u.id === parseInt(selectedSellerId))?.username || "Unknown Seller";
+        endpoint = `http://localhost:3001/api/admin/reports/listings-by-seller/${selectedSellerId}`;
+        reportTitle = `Listings Report for: ${sellerName}`;
+        tableHeaders = ["ID", "Title", "Make", "Model", "Year", "Price (Rs.)", "Type", "Listed On"];
+        tableDataExtractor = (listing: any) => [
+          String(listing.listing_id), listing.title, listing.make || 'N/A', listing.model || 'N/A',
+          String(listing.year || 'N/A'), listing.price ? Number(listing.price).toLocaleString() : 'N/A',
+          listing.is_rentable ? 'Rent' : 'Sale', formatDate(listing.listed_on)
         ];
         break;
       default:
@@ -972,8 +992,37 @@ const AdminDashboard = () => {
                                       </Button>
                                       {/* Add more content-related reports here */}
                                     </CardContent>
+                                  </Card>    
+                                  {/* **NEW**: Listings by Seller Report */}
+                                  <Card className="shadow-sm">
+                                    <CardHeader>
+                                      <CardTitle className="text-lg flex items-center gap-2"><Users className="h-5 w-5"/> Listings by Seller</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="flex flex-col gap-3">
+                                        <Label htmlFor="seller-select">Select a Seller</Label>
+                                        <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
+                                            <SelectTrigger id="seller-select" className="w-full">
+                                                <SelectValue placeholder="Select a seller to generate report" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {/* Use the 'sellers' array we already have, but filter from 'users' to get all sellers */}
+                                                {users.filter(u => u.role === 'seller').map(seller => (
+                                                    <SelectItem key={seller.id} value={String(seller.id)}>
+                                                        {seller.username} (ID: {seller.id})
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                      <Button
+                                          onClick={() => handleGenerateReport('listings-by-seller')}
+                                          disabled={!!isReportDownloading || !selectedSellerId} // Disable if no seller is selected
+                                          variant="default" // Make it the primary action for this card
+                                        >
+                                          <FileText className="h-4 w-4 mr-2" />
+                                          {isReportDownloading === 'listings-by-seller' ? "Generating..." : "Download Seller's Listings (PDF)"}
+                                      </Button>
+                                    </CardContent>
                                   </Card>
-
                               </div>
                             </CardContent>
                           </Card>
