@@ -177,10 +177,12 @@ app.get('/api/my-vehicles', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
         const vehiclesResult = await pool.query(
-            `SELECT v.*, (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) as image
-             FROM vehicles v
-             WHERE v.user_id = $1
-             ORDER BY v.created_at DESC`,
+            `SELECT
+                v.*, -- Select all columns from vehicles, including the new status
+                (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) as image
+            FROM vehicles v
+            WHERE v.user_id = $1
+            ORDER BY v.created_at DESC`,
             [userId]
         );
         res.json(vehiclesResult.rows);
@@ -197,13 +199,13 @@ app.get('/api/vehicles', async (req, res) => {
             `SELECT
                 v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel,
                 v.is_rentable, v.description, v.make,
-                v.model, -- <<< Added v.model
-                v.year,  -- <<< Added v.year
+                v.model, v.year,
                 u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
                 (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
-             FROM vehicles v
-             JOIN users u ON v.user_id = u.id
-             ORDER BY v.created_at DESC`
+            FROM vehicles v
+            JOIN users u ON v.user_id = u.id
+            WHERE v.status = 'approved' -- <<< ADD THIS LINE
+            ORDER BY v.created_at DESC`
         );
 
         // Use the corrected helper function below
@@ -1219,6 +1221,58 @@ app.get('/api/admin/reports/listings-by-seller/:userId', authenticateToken, isAd
         res.json(result.rows);
     } catch (err) {
         console.error("[API /api/admin/reports/listings-by-seller] Error:", err.message);
+        res.status(500).send("Server error");
+    }
+});
+
+// Example: Single endpoint to update status
+app.put('/api/admin/vehicles/:id/status', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body; // Expect 'approved' or 'rejected' in the body
+
+    if (!['approved', 'rejected'].includes(status)) {
+        return res.status(400).send("Invalid status provided.");
+    }
+
+    try {
+        const result = await pool.query(
+            'UPDATE vehicles SET status = $1 WHERE id = $2 RETURNING id, status',
+            [status, id]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).send("Vehicle not found.");
+        }
+
+        console.log(`[Admin Action] User ${req.user.id} updated status of vehicle ${id} to ${status}.`);
+        res.status(200).json({ message: `Vehicle status updated to ${status}`, vehicle: result.rows[0] });
+    } catch (err) {
+        console.error(`[API /admin/vehicles/:id/status PUT] Error:`, err.message);
+        res.status(500).send("Server error updating vehicle status.");
+    }
+});
+
+// Optional: Add endpoint to fetch ONLY pending vehicles for the admin dashboard
+app.get('/api/admin/vehicles/pending', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const result = await pool.query(
+             `SELECT
+                v.*, -- Select all columns
+                u.username as owner_username,
+                (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) as image
+             FROM vehicles v
+             JOIN users u ON v.user_id = u.id
+             WHERE v.status = 'pending' -- <<< Filter by pending status
+             ORDER BY v.created_at ASC` // Show oldest pending first
+        );
+         // Format results similar to the other admin vehicle fetch
+         const vehicles = result.rows.map(row => ({
+            ...row,
+            image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg'
+         }));
+        res.json(vehicles);
+    } catch (err) {
+        console.error("[API /admin/vehicles/pending] Error fetching pending vehicles:", err.message);
         res.status(500).send("Server error");
     }
 });

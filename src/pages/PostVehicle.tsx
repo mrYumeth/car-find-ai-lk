@@ -109,7 +109,7 @@ const PostVehicle = () => {
 
         if (!response.ok) throw new Error("Failed to post vehicle. Please check all fields.");
 
-        toast({ title: "Success!", description: "Your vehicle has been posted successfully." });
+        toast({ title: "Submitted!", description: "Your vehicle has been submitted for approval." }); // NEW
         navigate('/dashboard');
     } catch (error) {
         console.error("Error posting vehicle:", error);

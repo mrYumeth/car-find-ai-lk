@@ -1,7 +1,8 @@
 // src/pages/AdminDashboard.tsx
 import React, { useState, useEffect } from "react";
 // **Import Download icon**
-import { Users, Car, Flag, CheckCircle, Edit, Trash2, Search, AlertTriangle, Check, Download, FileText } from "lucide-react";import { Button } from "@/components/ui/button";
+import { Users, Car, Flag, CheckCircle, Edit, Trash2, Search, AlertTriangle, Check, Download, FileText, X } from "lucide-react"; // <<< ADD , X
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -108,6 +109,8 @@ const AdminDashboard = () => {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [loadingListings, setLoadingListings] = useState(false);
   const [loadingReports, setLoadingReports] = useState(false);
+  const [pendingListings, setPendingListings] = useState<Listing[]>([]);
+  const [loadingPending, setLoadingPending] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -195,6 +198,29 @@ const AdminDashboard = () => {
     }
   };
 
+  // **NEW: Fetch Pending Listings Function**
+  const fetchPendingListings = async () => {
+    setLoadingPending(true);
+    const token = localStorage.getItem('token');
+    if (!token) { navigate('/login'); return; }
+    try {
+        const response = await fetch('http://localhost:3001/api/admin/vehicles/pending', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+             if (response.status === 403) throw new Error("Access Forbidden: Admins only.");
+            throw new Error("Failed to fetch pending listings");
+        }
+        const data: Listing[] = await response.json();
+        setPendingListings(data);
+    } catch (error) {
+        console.error("Error fetching pending listings:", error);
+        toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+         if ((error as Error).message.includes("Forbidden")) { navigate('/'); }
+    } finally {
+        setLoadingPending(false);
+    }
+  };
 
   // --- **MODIFIED** Fetch data ---
   useEffect(() => {
@@ -202,6 +228,7 @@ const AdminDashboard = () => {
     fetchUsers();
     fetchListings();
     fetchReports(); // **NEW**
+    fetchPendingListings(); // **<<< ADD THIS LINE**
   }, []); // Empty dependency array [] means this runs only ONCE on mount
 
 
@@ -379,6 +406,43 @@ const AdminDashboard = () => {
       await handleDeleteListing(listingId, title);
   };
 
+  // **NEW: Approval Handlers**
+  const updateListingStatus = async (listingId: number, title: string, status: 'approved' | 'rejected') => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+           toast({ title: "Error", description: "Authentication token missing.", variant: "destructive" });
+           return;
+      }
+      try {
+          const response = await fetch(`http://localhost:3001/api/admin/vehicles/${listingId}/status`, {
+              method: 'PUT',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ status })
+          });
+          if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(errorText || `Failed to ${status} listing.`);
+          }
+          toast({ title: "Success", description: `Listing "${title}" has been ${status}.` });
+
+          // Remove from pending list
+          setPendingListings(current => current.filter(l => l.id !== listingId));
+
+          // If approved, re-fetch the main listings to include it
+          if (status === 'approved') {
+              fetchListings();
+          }
+
+      } catch (error) {
+          toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+      }
+  };
+
+  const handleApproveListing = (listingId: number, title: string) => updateListingStatus(listingId, title, 'approved');
+  const handleRejectListing = (listingId: number, title: string) => updateListingStatus(listingId, title, 'rejected');
 
 // --- Report Generation Functions (for PDF) ---
 
@@ -585,6 +649,14 @@ const AdminDashboard = () => {
       report.reason.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // **NEW: Filtered Pending Listings**
+  const filteredPendingListings = pendingListings.filter(
+    listing =>
+        listing.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        listing.owner_username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (listing.make && listing.make.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (listing.model && listing.model.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
   // --- Format Date Helper ---
    const formatDate = (dateString: string) => {
@@ -708,7 +780,46 @@ const AdminDashboard = () => {
             )))}
         </div>
     );
-
+    
+    // --- **NEW**: Render Pending Listing List Helper ---
+    const renderPendingListingList = (listingList: Listing[]) => (
+       <div className="space-y-4 p-4">
+            {listingList.length === 0 ? (
+                <p className="text-muted-foreground">
+                    No listings pending approval{searchTerm ? " matching your search" : ""}.
+                </p>
+             ) : (
+             listingList.map((listing) => (
+                <div key={listing.id} className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 border rounded-lg hover:bg-accent">
+                    <img
+                        src={listing.image ? `http://localhost:3001${listing.image}` : "/placeholder.svg"}
+                        alt={listing.title}
+                        className="w-full md:w-20 h-16 object-cover rounded"
+                    />
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-semibold">{listing.title}</h4>
+                            <Badge variant={listing.is_rentable ? 'secondary' : 'default'}>
+                                {listing.is_rentable ? 'Rent' : 'Sale'}
+                            </Badge>
+                        </div>
+                        <p className="text-sm font-medium text-blue-600">Rs. {listing.price}</p>
+                        <p className="text-sm text-muted-foreground">Owner: {listing.owner_username} (ID: {listing.user_id})</p>
+                        <p className="text-xs text-muted-foreground">Submitted: {formatDate(listing.created_at)}</p>
+                    </div>
+                    <div className="flex gap-2 self-start md:self-center">
+                         <Button variant="default" size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleApproveListing(listing.id, listing.title)}>
+                            <Check className="h-4 w-4 mr-1" /> Approve
+                         </Button>
+                         <Button variant="destructive" size="sm" onClick={() => handleRejectListing(listing.id, listing.title)}>
+                            <X className="h-4 w-4 mr-1" /> Reject
+                         </Button>
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/vehicle/${listing.id}`)}>View</Button>
+                    </div>
+                </div>
+            )))}
+        </div>
+    );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50">
@@ -749,21 +860,22 @@ const AdminDashboard = () => {
               <Card>
                 <CardContent className="p-6 text-center">
                   <CheckCircle className="h-8 w-8 text-purple-600 mx-auto mb-2" />
-                  <div className="text-2xl font-bold">N/A</div>
-                  <div className="text-muted-foreground">Approval Rate</div>
+                  <div className="text-2xl font-bold">{pendingListings.length}</div>
+                  <div className="text-muted-foreground">Pending Approvals</div>
                 </CardContent>
               </Card>
             </div>
 
-
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            {/* **MODIFIED**: Added new Reports Tab */}
-            <TabsList className="grid w-full grid-cols-4"> {/* Changed grid-cols-3 to 4 */}
-              <TabsTrigger value="users">Users ({filteredUsers.length})</TabsTrigger>
-              <TabsTrigger value="listings">Listings ({filteredListings.length})</TabsTrigger>
-              <TabsTrigger value="pendingReports">Pending Reports ({filteredReports.length})</TabsTrigger> {/* Changed value */}
-              <TabsTrigger value="systemReports">System Reports</TabsTrigger> {/* **NEW** */}
-            </TabsList>
+                <Tabs value={activeTab} onValueChange={setActiveTab}>
+                {/* **MODIFIED**: Added new Reports Tab */}
+                <TabsList className="grid w-full grid-cols-5"> {/* Changed grid-cols-4 to 5 */}
+                  <TabsTrigger value="users">Users ({filteredUsers.length})</TabsTrigger>
+                  <TabsTrigger value="listings">Listings ({filteredListings.length})</TabsTrigger>
+                  {/* **NEW TAB** */}
+                  <TabsTrigger value="pendingApprovals">Pending Approvals ({pendingListings.length})</TabsTrigger>
+                  <TabsTrigger value="pendingReports">Pending Reports ({filteredReports.length})</TabsTrigger>
+                  <TabsTrigger value="systemReports">System Reports</TabsTrigger>
+                </TabsList>
 
             {/* --- Users Tab --- */}
             <TabsContent value="users" className="space-y-6">
@@ -835,6 +947,31 @@ const AdminDashboard = () => {
                         </div>
                     </CardContent>
                 </Card>
+            </TabsContent>
+
+            {/* --- **NEW**: Pending Approvals Tab --- */}
+            <TabsContent value="pendingApprovals" className="space-y-6">
+                 <Card>
+                    <CardHeader>
+                      <div className="flex justify-between items-center">
+                        <CardTitle>Listings Pending Approval</CardTitle>
+                         <div className="w-64 relative">
+                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          <Input
+                            placeholder="Search pending listings..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-9"
+                          />
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                       {loadingPending ? <div className="p-4">Loading pending listings...</div> :
+                        renderPendingListingList(filteredPendingListings)
+                       }
+                    </CardContent>
+                 </Card>
             </TabsContent>
 
             {/* --- Pending Reports Tab --- */}

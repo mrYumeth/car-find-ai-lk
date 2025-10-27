@@ -14,6 +14,7 @@ interface VehicleListing {
   price: string;
   is_rentable: boolean;
   image: string | null;
+  status: 'pending' | 'approved' | 'rejected'; // Add this
 }
 
 const Dashboard = () => {
@@ -127,7 +128,7 @@ const Dashboard = () => {
                 <CardContent>
                   <div className="space-y-4">
                     {myListings.length > 0 ? myListings.map((listing) => (
-                      <div key={listing.id} className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50">
+                      <div key={listing.id} className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50"> 
                         <img
                           src={`http://localhost:3001${listing.image}` || "/placeholder.svg"}
                           alt={listing.title}
@@ -136,10 +137,23 @@ const Dashboard = () => {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <h3 className="text-lg font-semibold">{listing.title}</h3>
-                            <Badge variant={listing.is_rentable ? "secondary" : "default"}>
-                              {listing.is_rentable ? 'For Rent' : 'For Sale'}
+                            {/* Status Badge */}
+                            <Badge
+                              variant={
+                                listing.status === 'approved' ? 'default' :
+                                listing.status === 'pending' ? 'secondary' :
+                                'destructive'
+                              }
+                              className={
+                                listing.status === 'approved' ? 'bg-green-600' : '' // Optional: custom color for approved
+                              }
+                            >
+                              {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}
                             </Badge>
                           </div>
+                          <Badge variant={listing.is_rentable ? "secondary" : "default"} className="mb-2"> {/* Added margin bottom */}
+                            {listing.is_rentable ? 'For Rent' : 'For Sale'}
+                          </Badge>
                           <p className="text-blue-600 font-semibold mb-2">Rs. {Number(listing.price).toLocaleString()}</p>
                         </div>
                         <div className="flex gap-2">
