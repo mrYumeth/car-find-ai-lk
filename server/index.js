@@ -1255,25 +1255,25 @@ app.put('/api/admin/vehicles/:id/status', authenticateToken, isAdmin, async (req
     }
 });
 
-// Optional: Add endpoint to fetch ONLY pending vehicles for the admin dashboard
-app.get('/api/admin/vehicles/pending', authenticateToken, isAdmin, async (req, res) => {
-    try {
-        const result = await pool.query(
-             `SELECT
-                v.*, -- Select all columns
-                u.username as owner_username,
-                (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) as image
-             FROM vehicles v
-             JOIN users u ON v.user_id = u.id
-             WHERE v.status = 'pending' -- <<< Filter by pending status
-             ORDER BY v.created_at ASC` // Show oldest pending first
-        );
+        // Optional: Add endpoint to fetch ONLY pending vehicles for the admin dashboard
+        app.get('/api/admin/vehicles/pending', authenticateToken, isAdmin, async (req, res) => {
+            try {
+                const result = await pool.query(
+                    `SELECT
+                        v.*, -- Select all columns
+                        u.username as owner_username,
+                        (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) as image
+                    FROM vehicles v
+                    JOIN users u ON v.user_id = u.id
+                    WHERE v.status = 'pending' -- <<< Filter by pending status
+                    ORDER BY v.created_at ASC` // Show oldest pending first
+                );
          // Format results similar to the other admin vehicle fetch
-         const vehicles = result.rows.map(row => ({
-            ...row,
-            image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg'
-         }));
-        res.json(vehicles);
+            const vehicles = result.rows.map(row => ({
+                        ...row,
+                        image: row.image ? `${row.image}` : null // Just send the relative path
+                    }));
+                    res.json(vehicles);
     } catch (err) {
         console.error("[API /admin/vehicles/pending] Error fetching pending vehicles:", err.message);
         res.status(500).send("Server error");
