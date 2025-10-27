@@ -52,9 +52,9 @@ const VehicleCard = ({ vehicle, isLoggedIn }: VehicleCardProps) => {
       
       <CardContent className="p-6">
         <div className="flex justify-between items-start mb-3">
-          <h3 className="text-xl font-bold text-gray-800 line-clamp-1">
-            {vehicle.title}
-          </h3>
+        <h3 className="text-xl font-bold text-gray-800">
+              {vehicle.title}
+            </h3>
           <div className="text-right">
             <div className="text-2xl font-bold text-blue-600">
               Rs. {vehicle.price}
@@ -74,10 +74,6 @@ const VehicleCard = ({ vehicle, isLoggedIn }: VehicleCardProps) => {
         
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center">
-            <div className="flex items-center bg-gray-100 rounded-full px-3 py-1">
-              <Star className="h-4 w-4 text-yellow-500 mr-1" />
-              <span className="text-sm font-medium">{vehicle.rating}</span>
-            </div>
             <span className="text-sm text-gray-600 ml-2">{vehicle.seller_name}</span>
           </div>
         </div>

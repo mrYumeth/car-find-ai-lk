@@ -9,6 +9,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 // ++ Ensure this interface EXACTLY matches the 'vehicle' prop structure in VehicleCardProps ++
 interface Vehicle {
   id: number;
@@ -25,6 +33,7 @@ interface Vehicle {
   rating: number;
   is_rentable: boolean;
   make: string;
+  model?: string; 
 }
 
 // Interface for extracted entities (for logging)
@@ -38,6 +47,12 @@ interface ExtractedEntities {
     fuel_type: string | null;
 }
 
+// +++ Define the list of makes (same as PostVehicle.tsx) +++
+const vehicleMakes = [
+  "Toyota", "Honda", "Suzuki", "Nissan", "Mitsubishi", "Kia", "Hyundai",
+  "BMW", "Mercedes-Benz", "Audi", "Volkswagen", "Ford", "Chevrolet",
+  "Mazda", "Subaru", "Tata", "Mahindra", "Perodua", "Proton", "Other"
+];
 
 const Index = () => {
     const [searchTerm, setSearchTerm] = useState("");
@@ -47,11 +62,50 @@ const Index = () => {
     const [searchResults, setSearchResults] = useState<Vehicle[] | null>(null);
     const [searchPerformed, setSearchPerformed] = useState(false);
     const { toast } = useToast();
+    const [selectedMake, setSelectedMake] = useState<string>("");
+    const [modelFilter, setModelFilter] = useState<string>("");
+    const [priceFilter, setPriceFilter] = useState<string>(""); // Keep state for price
 
     // State for recommendations
     const [recommendations, setRecommendations] = useState<Vehicle[]>([]);
     const [loadingRecs, setLoadingRecs] = useState(false);
 
+    // +++ Add Filtering Function +++
+    const applyFilters = (vehiclesToFilter: Vehicle[]): Vehicle[] => {
+        let filtered = vehiclesToFilter;
+
+        // Make Filter
+        if (selectedMake) {
+            filtered = filtered.filter(v => v.make === selectedMake);
+        }
+
+        // Model Filter (Case-insensitive partial match)
+        if (modelFilter.trim()) {
+            filtered = filtered.filter(v =>
+                v.model?.toLowerCase().includes(modelFilter.trim().toLowerCase()) || // Check model field
+                v.title?.toLowerCase().includes(modelFilter.trim().toLowerCase())   // Also check title
+            );
+        }
+
+        // Price Filter
+        if (priceFilter) {
+            filtered = filtered.filter(v => {
+                // Ensure price is a number for comparison
+                const priceNum = parseFloat(v.price.replace(/,/g, '')); // Remove commas if present
+                if (isNaN(priceNum)) return false; // Exclude if price is not a valid number
+
+                switch (priceFilter) {
+                    case "under2m": return priceNum < 2000000;
+                    case "2m-5m": return priceNum >= 2000000 && priceNum <= 5000000;
+                    case "5m-10m": return priceNum > 5000000 && priceNum <= 10000000;
+                    case "over10m": return priceNum > 10000000;
+                    default: return true; // 'Any Price' or unknown value
+                }
+            });
+        }
+
+        return filtered;
+    };
 
     // Helper to format fetched data (ensure all fields exist)
     const formatVehicleData = (vehicleData: any[]): Vehicle[] => {
@@ -73,18 +127,27 @@ const Index = () => {
         }));
     };
 
-    const fetchAllVehicles = async () => {
+        const fetchAllVehicles = async () => {
         setLoading(true);
-        setSearchPerformed(false);
+        setSearchPerformed(false); // Reset search state
         setSearchResults(null);
+        setSearchTerm(""); // Clear main search term
+
+        // +++ Clear filter states +++
+        setSelectedMake("");
+        setModelFilter("");
+        setPriceFilter("");
+
         try {
             const response = await fetch('http://localhost:3001/api/vehicles');
             if (!response.ok) throw new Error('Failed to fetch vehicles');
             const data = await response.json();
-            setVehicles(formatVehicleData(data)); // Use formatter
+            // No need to apply filters here anymore as they are cleared
+            setVehicles(formatVehicleData(data));
         } catch (error) {
             console.error("Error fetching vehicles:", error);
             toast({ title: "Error", description: "Could not load vehicle listings.", variant: "destructive" });
+            setVehicles([]); // Set empty on error
         } finally {
             setLoading(false);
         }
@@ -112,7 +175,6 @@ const Index = () => {
         }
     };
 
-
     useEffect(() => {
         const token = localStorage.getItem('token');
         const loggedIn = !!token;
@@ -135,42 +197,76 @@ const Index = () => {
     };
 
 
-    const handleSearch = async () => {
-        if (!searchTerm.trim()) { fetchAllVehicles(); return; }
-        setLoading(true); setSearchPerformed(true); setSearchResults(null);
+        const handleSearch = async () => {
+        // --- Determine if any filters are active ---
+        const filtersActive = !!selectedMake || !!modelFilter.trim() || !!priceFilter;
 
-        // Fetch Entities & Log Search
+        // --- If NO main search term AND NO filters, fetch all and filter ---
+        if (!searchTerm.trim() && !filtersActive) {
+            await fetchAllVehicles(); // fetchAllVehicles will now also apply filters if any were leftover somehow
+            return;
+        }
+
+        setLoading(true);
+        setSearchPerformed(true); // Mark that a search or filter attempt was made
+        setSearchResults(null);
+
+        // Fetch Entities & Log Search (Only if main search term exists)
         let entitiesForLogging: ExtractedEntities | null = null;
-        try {
-            const entityResponse = await fetch(`http://localhost:5000/parse?query=${encodeURIComponent(searchTerm)}`);
-            if (entityResponse.ok) { entitiesForLogging = await entityResponse.json(); }
-        } catch (entityError) { console.error("Could not fetch entities for logging:", entityError); }
-        await logSearch(searchTerm, entitiesForLogging);
+        if (searchTerm.trim()) {
+            try {
+                const entityResponse = await fetch(`http://localhost:5000/parse?query=${encodeURIComponent(searchTerm)}`);
+                if (entityResponse.ok) { entitiesForLogging = await entityResponse.json(); }
+            } catch (entityError) { console.error("Could not fetch entities for logging:", entityError); }
+            await logSearch(searchTerm, entitiesForLogging);
+        }
 
-        // Call Search Endpoint
+        // Call Search Endpoint (if main term exists) OR fetch all (if only filters exist)
         try {
-            const response = await fetch(`http://localhost:3001/api/search/nlp?q=${encodeURIComponent(searchTerm)}`);
-            let data = [];
-            if (!response.ok) {
-                 try { data = await response.json(); } catch (e) {}
-                console.error("NLP search failed, status:", response.status);
-                toast({ title: "Search Failed", description: "Using basic keyword search.", variant: "destructive" });
+            let rawData = [];
+            if (searchTerm.trim()) {
+                // Use NLP endpoint if there's a main search term
+                const response = await fetch(`http://localhost:3001/api/search/nlp?q=${encodeURIComponent(searchTerm)}`);
+                if (!response.ok) {
+                    console.error("NLP search failed, status:", response.status);
+                    // Attempt to parse error, but proceed
+                    try { await response.json(); } catch (e) {}
+                    toast({ title: "Search Notice", description: "Using basic keyword search due to NLP issue.", variant: "default" });
+                     // In case of NLP failure, the backend already falls back, so we expect *some* data
+                     rawData = await response.json(); // Assume fallback worked
+                } else {
+                     rawData = await response.json();
+                }
             } else {
-                 data = await response.json();
-                 if (data.length === 0) { toast({ title: "No Results", description: `No vehicles found matching "${searchTerm}".`, variant: "default" }); }
+                 // If only filters are active (no main search term), fetch all vehicles first
+                 const response = await fetch('http://localhost:3001/api/vehicles');
+                 if (!response.ok) throw new Error('Failed to fetch vehicles for filtering');
+                 rawData = await response.json();
             }
-            setSearchResults(formatVehicleData(data)); // Use formatter
+
+            // --- Apply filters AFTER fetching ---
+            const formattedData = formatVehicleData(rawData);
+            const filteredData = applyFilters(formattedData); // Apply Make/Model/Price filters
+
+            if (filteredData.length === 0) {
+                 toast({ title: "No Results", description: `No vehicles found matching your criteria.`, variant: "default" });
+            }
+            setSearchResults(filteredData); // Set state with filtered results
+
         } catch (error) {
-            console.error("Error calling NLP search API:", error);
-            toast({ title: "Search Error", description: "An error occurred while searching.", variant: "destructive" });
-            setSearchResults([]);
-        } finally { setLoading(false); }
-    };
+            console.error("Error during search/filter:", error);
+            toast({ title: "Search Error", description: "An error occurred.", variant: "destructive" });
+            setSearchResults([]); // Set empty results on error
+        } finally {
+            setLoading(false);
+        }
+    }
 
    const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { handleSearch(); } };
 
     // Determine lists to display
-    const displayList = searchPerformed && searchResults !== null ? searchResults : vehicles;
+    // If a search OR filter was performed, use searchResults, otherwise use the base vehicles list
+    const displayList = searchPerformed ? (searchResults ?? []) : vehicles;
     const vehiclesForSale = displayList.filter(v => !v.is_rentable);
     const vehiclesForRent = displayList.filter(v => v.is_rentable);
 
@@ -244,10 +340,43 @@ const Index = () => {
                                 <Button variant="outline" className="h-12 px-4 bg-white text-gray-700 hover:bg-gray-100"><SlidersHorizontal className="h-5 w-5" /></Button>
                             </div>
                             {/* Filters */}
-                            <div className="flex gap-4 mt-4 text-sm">
-                                <select className="flex-1 h-10 px-3 rounded border border-gray-300 text-gray-700"><option>All Categories</option></select>
-                                <select className="flex-1 h-10 px-3 rounded border border-gray-300 text-gray-700"><option>All Locations</option></select>
-                                <select className="flex-1 h-10 px-3 rounded border border-gray-300 text-gray-700"><option>Price Range</option></select>
+                            <div className="flex flex-col sm:flex-row gap-4 mt-4 text-sm"> {/* Use flex-col on small screens */}
+                                {/* +++ Make Dropdown +++ */}
+                                <Select value={selectedMake} onValueChange={setSelectedMake}>
+                                    <SelectTrigger className="h-10 w-full sm:flex-1 text-gray-700">
+                                        <SelectValue placeholder="Any Make" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {/* <<< DELETE THIS LINE >>> */}
+                                        {/* <SelectItem value="">Any Make</SelectItem> */}
+                                        {vehicleMakes.map(make => (
+                                            <SelectItem key={make} value={make}>{make}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+
+                                {/* +++ Model Input +++ */}
+                                <Input
+                                    placeholder="Model"
+                                    value={modelFilter}
+                                    onChange={(e) => setModelFilter(e.target.value)}
+                                    className="h-10 w-full sm:flex-1 text-gray-700"
+                                />
+
+                                {/* Price Range Select (Using Shadcn Select for consistency) */}
+                                <Select value={priceFilter} onValueChange={setPriceFilter}>
+                                     <SelectTrigger className="h-10 w-full sm:flex-1 text-gray-700">
+                                        <SelectValue placeholder="Price Range" />
+                                     </SelectTrigger>
+                                     <SelectContent>
+                                        {/* <<< DELETE THIS LINE >>> */}
+                                        {/* <SelectItem value="">Any Price</SelectItem> */}
+                                        <SelectItem value="under2m">Under 2M</SelectItem>
+                                        <SelectItem value="2m-5m">2M - 5M</SelectItem>
+                                        <SelectItem value="5m-10m">5M - 10M</SelectItem>
+                                        <SelectItem value="over10m">Over 10M</SelectItem>
+                                     </SelectContent>
+                                </Select>
                             </div>
                         </Card>
                     </div>
@@ -272,9 +401,9 @@ const Index = () => {
                     renderVehicleList(recommendations, "Recommended For You", "Vehicles you might be interested in.", false, "rec", loadingRecs)
                  )}
                 {/* Render Sales Listings */}
-                {renderVehicleList(vehiclesForSale, "Vehicles For Sale", "Buy the perfect car from our wide selection.", false, "sale", loading)}
+                {renderVehicleList(vehiclesForSale.slice(0, 8), "Vehicles For Sale", "Buy the perfect car from our wide selection.", false, "sale", loading)}
                 {/* Render Rental Listings */}
-                {renderVehicleList(vehiclesForRent, "Vehicles For Rent", "Find short-term rentals for your travel needs.", true, "rent", loading)}
+                {renderVehicleList(vehiclesForRent.slice(0, 8), "Vehicles For Rent", "Find short-term rentals for your travel needs.", true, "rent", loading)}
                 {/* View All / Clear Search Button */}
                 <div className="text-center mt-12">
                   {searchPerformed && searchResults !== null ? (

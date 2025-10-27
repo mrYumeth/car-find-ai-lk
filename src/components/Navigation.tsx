@@ -55,9 +55,9 @@ const Navigation = () => {
           {/* Desktop Navigation - Show only when NOT logged in */}
           {!isLoggedIn && (
             <div className="hidden md:flex flex-1 justify-center items-center space-x-8">
-              <Link to="/" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">Buy</Link>
-              <Link to="/post-vehicle" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">Sell</Link>
-              <a href="#" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">Rent</a>
+            <span className="text-gray-600 font-medium cursor-default">Buy</span>
+              <span className="text-gray-600 font-medium cursor-default">Sell</span>
+              <span className="text-gray-600 font-medium cursor-default">Rent</span>
               <Link to="/about" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">About</Link>
             </div>
           )}
