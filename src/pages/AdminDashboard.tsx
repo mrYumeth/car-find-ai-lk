@@ -1,7 +1,7 @@
 // src/pages/AdminDashboard.tsx
 import React, { useState, useEffect } from "react";
-// **Added AlertTriangle and Check icons**
-import { Users, Car, Flag, CheckCircle, Edit, Trash2, Search, AlertTriangle, Check } from "lucide-react";
+// **Import Download icon**
+import { Users, Car, Flag, CheckCircle, Edit, Trash2, Search, AlertTriangle, Check, Download } from "lucide-react"; // Added Download
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+
+// Import PDF generation libraries
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 
 // --- Define types for API data ---
@@ -91,6 +95,8 @@ interface EditingListingState extends Omit<Listing, 'owner_username' | 'created_
     // ...
 }
 
+// Type for report data mapping
+type ReportDataType = User[] | Listing[] | Report[];
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("users");
@@ -99,20 +105,17 @@ const AdminDashboard = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
-  const [reports, setReports] = useState<Report[]>([]); // **NEW**
+  const [reports, setReports] = useState<Report[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [loadingListings, setLoadingListings] = useState(false);
-  const [loadingReports, setLoadingReports] = useState(false); // **NEW**
+  const [loadingReports, setLoadingReports] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-
-  // State for Edit User modal
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<EditingUserState | null>(null);
-
-  // State for Edit Listing modal
   const [isEditListingDialogOpen, setIsEditListingDialogOpen] = useState(false);
   const [editingListing, setEditingListing] = useState<EditingListingState | null>(null);
+  const [isReportDownloading, setIsReportDownloading] = useState<string | null>(null); // Track which report is downloading
 
 
   // --- Fetch Users Function ---
@@ -199,7 +202,7 @@ const AdminDashboard = () => {
 
 
   // --- User Edit/Delete Handlers ---
-  const handleDeleteUser = async (userId: number, username: string) => { /* ... handleDeleteUser ... */ 
+  const handleDeleteUser = async (userId: number, username: string) => { /* ... handleDeleteUser ... */
     const token = localStorage.getItem('token');
     if (!token) return;
     try {
@@ -229,7 +232,7 @@ const AdminDashboard = () => {
        if (!editingUser) return;
        setEditingUser({ ...editingUser, role: value });
   };
-  const handleSaveUser = async () => { /* ... handleSaveUser ... */ 
+  const handleSaveUser = async () => { /* ... handleSaveUser ... */
     if (!editingUser) return;
     const token = localStorage.getItem('token');
     if (!token) {
@@ -265,7 +268,7 @@ const AdminDashboard = () => {
 
 
   // --- Listing Edit/Delete Handlers ---
-  
+
   // **MODIFIED** handleDeleteListing to also update reports state
   const handleDeleteListing = async (listingId: number, title: string) => {
         const token = localStorage.getItem('token');
@@ -281,21 +284,20 @@ const AdminDashboard = () => {
                 throw new Error(errorText || "Failed to delete listing.");
             }
             toast({ title: "Success", description: `Listing "${title}" deleted.` });
-            
+
             // Update local listings state
             setListings(currentListings => currentListings.filter(listing => listing.id !== listingId));
-            
+
             // **NEW**: Also remove any reports associated with this deleted listing from local state
-            // This works because the DB cascade deletes the report, so we just sync the UI
             setReports(currentReports => currentReports.filter(report => report.vehicle_id !== listingId));
 
         } catch (error) {
             toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
         }
     };
-  const handleEditListingClick = (listing: Listing) => { /* ... handleEditListingClick ... */ 
+  const handleEditListingClick = (listing: Listing) => { /* ... handleEditListingClick ... */
     const { owner_username, created_at, user_id, ...editableFields } = listing;
-    setEditingListing(editableFields); 
+    setEditingListing(editableFields);
     setIsEditListingDialogOpen(true);
   };
   const handleEditListingInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => { /* ... handleEditListingInputChange ... */
@@ -333,7 +335,7 @@ const AdminDashboard = () => {
             const errorText = await response.text();
             throw new Error(errorText || "Failed to update listing.");
         }
-        const updatedListingFromServer: Listing = await response.json(); 
+        const updatedListingFromServer: Listing = await response.json();
         setListings(currentListings =>
             currentListings.map(l => (l.id === updatedListingFromServer.id ? updatedListingFromServer : l))
         );
@@ -366,11 +368,160 @@ const AdminDashboard = () => {
         toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
     }
   };
-  
+
   // This function now just calls the modified handleDeleteListing
   const handleRemoveListingAndReport = async (listingId: number, title: string) => {
       // The handleDeleteListing function will now also clear the report from local state
       await handleDeleteListing(listingId, title);
+  };
+
+
+// --- **MODIFIED**: Report Generation Functions (for PDF) ---
+
+  /**
+   * Generates and downloads a PDF report from fetched data.
+   */
+  const handleGenerateReport = async (reportType: 'user-registrations' | 'all-listings' | 'reported-listings') => {
+    setIsReportDownloading(reportType); // Set which report is downloading
+    const token = localStorage.getItem('token');
+    if (!token) {
+        toast({ title: "Error", description: "Authentication token missing.", variant: "destructive" });
+        setIsReportDownloading(null);
+        return;
+    }
+
+    console.log(`Generating report: ${reportType}`);
+    let endpoint = '';
+    let reportTitle = '';
+    let tableHeaders: string[] = [];
+    let tableDataExtractor: (item: any) => string[];
+
+    // Configure based on report type
+    switch (reportType) {
+      case 'user-registrations':
+        endpoint = 'http://localhost:3001/api/admin/reports/user-registrations';
+        reportTitle = 'User Registrations Report';
+        tableHeaders = ["ID", "Username", "Email", "Role", "Registered On"];
+        tableDataExtractor = (user: User) => [
+          String(user.id),
+          user.username,
+          user.email,
+          user.role,
+          formatDate(user.created_at) // Use existing formatDate helper
+        ];
+        break;
+      case 'all-listings':
+        endpoint = 'http://localhost:3001/api/admin/reports/all-listings';
+        reportTitle = 'All Listings Report';
+        tableHeaders = ["ID", "Title", "Make", "Model", "Year", "Price (Rs.)", "Type", "Seller", "Listed On"];
+        tableDataExtractor = (listing: any) => [ // Use 'any' type from backend for flexibility
+          String(listing.listing_id),
+          listing.title,
+          listing.make || 'N/A',
+          listing.model || 'N/A',
+          String(listing.year || 'N/A'),
+          listing.price ? Number(listing.price).toLocaleString() : 'N/A',
+          listing.is_rentable ? 'Rent' : 'Sale',
+          listing.seller_username,
+          formatDate(listing.listed_on)
+        ];
+        break;
+      case 'reported-listings':
+        // Reuse the existing endpoint that fetches pending reports
+        endpoint = 'http://localhost:3001/api/admin/reports';
+        reportTitle = 'Pending Reported Listings Report';
+        tableHeaders = ["Report ID", "Listing Title", "Reason", "Description", "Reporter", "Reported On"];
+        tableDataExtractor = (report: Report) => [
+          String(report.id),
+          report.vehicle_title,
+          report.reason,
+          report.description || '-', // Handle optional description
+          report.reporter_username,
+          formatDate(report.created_at)
+        ];
+        break;
+      default:
+        toast({ title: "Error", description: "Invalid report type.", variant: "destructive" });
+        setIsReportDownloading(null);
+        return;
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+          headers: { 'Authorization': `Bearer ${token}` }
+      });
+      console.log(`Fetch response status for ${reportType}: ${response.status}`);
+      if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`Error fetching ${reportType} report: ${errorText}`);
+          throw new Error(`Failed to fetch report data. Status: ${response.status}`);
+      }
+
+      const data: ReportDataType = await response.json();
+      console.log(`Data received for ${reportType}:`, data.length, "rows");
+
+      if (!data || data.length === 0) {
+        toast({ title: "No Data", description: "There is no data to generate this report." });
+        return;
+      }
+
+      // --- PDF Generation ---
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight(); // Use this if needed for footer
+      const margin = 15;
+
+      // Title
+      doc.setFontSize(18);
+      doc.text(reportTitle, pageWidth / 2, margin, { align: 'center' });
+
+      // Generation Date
+      doc.setFontSize(10);
+      doc.setTextColor(100); // Gray color
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth / 2, margin + 8, { align: 'center' });
+
+      // Map data for the table
+      const tableBody = data.map(tableDataExtractor);
+
+      // Add Table using autoTable
+      autoTable(doc, {
+        head: [tableHeaders],
+        body: tableBody,
+        startY: margin + 15, // Start table below title and date
+        theme: 'grid', // Options: 'striped', 'grid', 'plain'
+        headStyles: { fillColor: [41, 128, 185], textColor: 255 }, // Blue header
+        styles: { fontSize: 8 },
+        columnStyles: { // Adjust column widths if needed
+            // 0: { cellWidth: 15 }, // Example: Make first column narrower
+        },
+        margin: { left: margin, right: margin }
+      });
+
+      // Add page numbers (optional footer)
+        const pageCount = (doc as any).internal.getNumberOfPages(); // Cast to access internal property
+        doc.setFontSize(8);
+        doc.setTextColor(100);
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+        }
+
+
+      // Save the PDF
+      const filename = `${reportType}_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(filename);
+      // --- End PDF Generation ---
+
+
+      toast({ title: "Report Generated", description: `${filename} download initiated.` });
+
+    } catch (error) {
+      console.error(`Error during report generation for ${reportType}:`, error);
+      toast({ title: "Report Generation Failed", description: (error as Error).message, variant: "destructive" });
+    } finally {
+      setIsReportDownloading(null); // Clear downloading status
+      console.log(`Finished report generation attempt for ${reportType}`);
+    }
   };
 
 
@@ -392,7 +543,7 @@ const AdminDashboard = () => {
         (listing.model && listing.model.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (listing.location && listing.location.toLowerCase().includes(searchTerm.toLowerCase()))
     );
-  
+
   const listingsForSale = filteredListings.filter(l => !l.is_rentable);
   const listingsForRent = filteredListings.filter(l => l.is_rentable);
 
@@ -467,7 +618,7 @@ const AdminDashboard = () => {
             )))}
         </div>
     );
-    
+
     // --- Render Listing List Helper ---
     const renderListingList = (listingList: Listing[]) => ( /* ... renderListingList ... */
        <div className="space-y-4 p-4">
@@ -534,13 +685,15 @@ const AdminDashboard = () => {
 
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto">
+            {/* ... (Header) ... */}
             <div className="mb-8">
                 <h1 className="text-4xl font-bold text-gray-800 mb-2">Admin Dashboard</h1>
                 <p className="text-muted-foreground">Manage users, listings, and reports</p>
             </div>
 
             {/* --- Stats Cards --- */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            {/* ... (Stats cards grid) ... */}
+             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               <Card>
                 <CardContent className="p-6 text-center">
                   <Users className="h-8 w-8 text-blue-600 mx-auto mb-2" />
@@ -558,7 +711,6 @@ const AdminDashboard = () => {
               <Card>
                 <CardContent className="p-6 text-center">
                   <Flag className="h-8 w-8 text-orange-600 mx-auto mb-2" />
-                  {/* **MODIFIED** Report Count */}
                   <div className="text-2xl font-bold">{reports.length}</div>
                   <div className="text-muted-foreground">Pending Reports</div>
                 </CardContent>
@@ -566,25 +718,26 @@ const AdminDashboard = () => {
               <Card>
                 <CardContent className="p-6 text-center">
                   <CheckCircle className="h-8 w-8 text-purple-600 mx-auto mb-2" />
-                  <div className="text-2xl font-bold">N/A</div> 
+                  <div className="text-2xl font-bold">N/A</div>
                   <div className="text-muted-foreground">Approval Rate</div>
                 </CardContent>
               </Card>
             </div>
-            {/* --- End Stats Cards --- */}
 
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3">
+            {/* **MODIFIED**: Added new Reports Tab */}
+            <TabsList className="grid w-full grid-cols-4"> {/* Changed grid-cols-3 to 4 */}
               <TabsTrigger value="users">Users ({filteredUsers.length})</TabsTrigger>
               <TabsTrigger value="listings">Listings ({filteredListings.length})</TabsTrigger>
-              {/* **MODIFIED** Report Count */}
-              <TabsTrigger value="reports">Reports ({filteredReports.length})</TabsTrigger>
+              <TabsTrigger value="pendingReports">Pending Reports ({filteredReports.length})</TabsTrigger> {/* Changed value */}
+              <TabsTrigger value="systemReports">System Reports</TabsTrigger> {/* **NEW** */}
             </TabsList>
 
-            {/* --- Users Tab (with nested tabs) --- */}
+            {/* --- Users Tab --- */}
             <TabsContent value="users" className="space-y-6">
-              <Card>
+              {/* ... (Existing Users Tab Content) ... */}
+               <Card>
                 <CardHeader>
                   <div className="flex justify-between items-center">
                     <CardTitle>User Management</CardTitle>
@@ -619,7 +772,8 @@ const AdminDashboard = () => {
 
             {/* --- Listings Tab --- */}
             <TabsContent value="listings" className="space-y-6">
-                <Card>
+                {/* ... (Existing Listings Tab Content) ... */}
+                 <Card>
                     <CardHeader>
                         <div className="flex justify-between items-center">
                             <CardTitle>Listing Management</CardTitle>
@@ -634,7 +788,7 @@ const AdminDashboard = () => {
                             </div>
                         </div>
                     </CardHeader>
-                    <CardContent className="p-0"> 
+                    <CardContent className="p-0">
                         <div className="space-y-0">
                             {loadingListings ? <p className="p-4">Loading listings...</p> :
                                 (
@@ -652,12 +806,14 @@ const AdminDashboard = () => {
                 </Card>
             </TabsContent>
 
-            {/* **NEW** Reports Tab */}
-            <TabsContent value="reports" className="space-y-6">
-                 <Card>
+            {/* --- Pending Reports Tab --- */}
+            {/* **MODIFIED**: Changed value to "pendingReports" */}
+            <TabsContent value="pendingReports" className="space-y-6">
+                 {/* ... (Existing Reports Tab Content, renamed from "reports") ... */}
+                  <Card>
                     <CardHeader>
                       <div className="flex justify-between items-center">
-                        <CardTitle>Report Management</CardTitle>
+                        <CardTitle>Pending Report Management</CardTitle>
                          <div className="w-64 relative">
                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                           <Input
@@ -672,7 +828,7 @@ const AdminDashboard = () => {
                     <CardContent>
                       <div className="space-y-4">
                         {loadingReports ? <p>Loading reports...</p> :
-                         filteredReports.length === 0 ? <p className="text-muted-foreground">No reports found{searchTerm ? " matching your search" : ""}.</p> :
+                         filteredReports.length === 0 ? <p className="text-muted-foreground">No pending reports found{searchTerm ? " matching your search" : ""}.</p> :
                          filteredReports.map((report) => (
                            <div key={report.id} className="p-4 border rounded-lg hover:bg-accent">
                              <div className="flex justify-between items-start mb-3">
@@ -687,15 +843,12 @@ const AdminDashboard = () => {
                                </div>
                                <Badge variant="destructive">{report.reason}</Badge>
                              </div>
-                             
                              {report.description && (
                                <div className="mb-4 ml-7">
                                  <p className="text-sm text-muted-foreground">{report.description}</p>
                                </div>
                              )}
-
                              <div className="flex flex-wrap gap-2 ml-7">
-                               {/* Alert Dialog for Removing Listing */}
                                <AlertDialog>
                                  <AlertDialogTrigger asChild>
                                     <Button variant="destructive" size="sm">
@@ -719,8 +872,6 @@ const AdminDashboard = () => {
                                     </AlertDialogFooter>
                                   </AlertDialogContent>
                                </AlertDialog>
-
-                               {/* Alert Dialog for Dismissing Report */}
                                <AlertDialog>
                                  <AlertDialogTrigger asChild>
                                     <Button variant="outline" size="sm">
@@ -744,7 +895,6 @@ const AdminDashboard = () => {
                                     </AlertDialogFooter>
                                   </AlertDialogContent>
                                </AlertDialog>
-                               
                                 <Button variant="ghost" size="sm" onClick={() => navigate(`/vehicle/${report.vehicle_id}`)}>
                                   View Listing
                                 </Button>
@@ -756,11 +906,84 @@ const AdminDashboard = () => {
                     </CardContent>
                  </Card>
             </TabsContent>
-          </Tabs>
-        </div>
-      </div>
 
-      {/* --- Edit User Dialog --- */}
+            {/* --- **MODIFIED**: System Reports Tab --- */}
+                        <TabsContent value="systemReports" className="space-y-6">
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>System Reports</CardTitle>
+                              <p className="text-sm text-muted-foreground pt-1">
+                                Download system data as PDF files. Generation might take a moment.
+                              </p>
+                            </CardHeader>
+                            <CardContent className="space-y-6">
+                              {/* Report Sections */}
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                                  {/* User Reports */}
+                                  <Card className="shadow-sm">
+                                    <CardHeader>
+                                      <CardTitle className="text-lg flex items-center gap-2"><Users className="h-5 w-5"/> User Data</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="flex flex-col gap-3">
+                                      <Button
+                                          onClick={() => handleGenerateReport('user-registrations')}
+                                          disabled={!!isReportDownloading} // Disable if any report is downloading
+                                          variant="outline"
+                                        >
+                                          <Download className="h-4 w-4 mr-2" />
+                                          {isReportDownloading === 'user-registrations' ? "Generating..." : "Download User List"}
+                                      </Button>
+                                      {/* Add more user-related reports here */}
+                                    </CardContent>
+                                  </Card>
+
+                                  {/* Listing Reports */}
+                                  <Card className="shadow-sm">
+                                    <CardHeader>
+                                      <CardTitle className="text-lg flex items-center gap-2"><Car className="h-5 w-5"/> Listing Data</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="flex flex-col gap-3">
+                                      <Button
+                                          onClick={() => handleGenerateReport('all-listings')}
+                                          disabled={!!isReportDownloading}
+                                          variant="outline"
+                                        >
+                                          <Download className="h-4 w-4 mr-2" />
+                                          {isReportDownloading === 'all-listings' ? "Generating..." : "Download All Listings"}
+                                        </Button>
+                                        {/* Add more listing-related reports here */}
+                                    </CardContent>
+                                  </Card>
+
+                                  {/* Reported Content Reports */}
+                                  <Card className="shadow-sm">
+                                    <CardHeader>
+                                      <CardTitle className="text-lg flex items-center gap-2"><Flag className="h-5 w-5"/> Reported Content</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="flex flex-col gap-3">
+                                      <Button
+                                          onClick={() => handleGenerateReport('reported-listings')}
+                                          disabled={!!isReportDownloading}
+                                          variant="outline"
+                                        >
+                                          <Download className="h-4 w-4 mr-2" />
+                                          {isReportDownloading === 'reported-listings' ? "Generating..." : "Download Pending Reports"}
+                                      </Button>
+                                      {/* Add more content-related reports here */}
+                                    </CardContent>
+                                  </Card>
+
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </TabsContent>
+                      </Tabs>
+                    </div>
+                  </div>
+
+      {/* --- (All Dialogs remain the same) --- */}
+      {/* ... (Edit User Dialog) ... */}
        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
            <DialogContent className="sm:max-w-[425px]">
                 {/* ... Edit User Dialog (no change) ... */}
@@ -783,7 +1006,7 @@ const AdminDashboard = () => {
                                 <SelectContent>
                                     <SelectItem value="buyer">Buyer</SelectItem>
                                     <SelectItem value="seller">Seller</SelectItem>
-                                    <SelectItem value="admin" disabled>Admin</SelectItem> 
+                                    <SelectItem value="admin" disabled>Admin</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -795,8 +1018,7 @@ const AdminDashboard = () => {
                 </DialogFooter>
             </DialogContent>
        </Dialog>
-
-       {/* --- Edit Listing Dialog --- */}
+      {/* ... (Edit Listing Dialog) ... */}
        <Dialog open={isEditListingDialogOpen} onOpenChange={setIsEditListingDialogOpen}>
             <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
                 {/* ... Edit Listing Dialog (no change) ... */}
@@ -808,7 +1030,7 @@ const AdminDashboard = () => {
                 </DialogHeader>
                 {editingListing && (
                     <div className="grid gap-4 py-4">
-                        
+
                         <div className="w-full h-48 mb-2 rounded-lg overflow-hidden bg-muted">
                           <img
                             src={editingListing.image ? `http://localhost:3001${editingListing.image}` : "/placeholder.svg"}

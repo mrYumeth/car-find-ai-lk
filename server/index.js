@@ -1116,6 +1116,54 @@ app.delete('/api/admin/reports/:id', authenticateToken, isAdmin, async (req, res
     }
 });
 
+// --- ADMIN REPORTING ENDPOINTS ---
+
+// GET: User Registration Report
+app.get('/api/admin/reports/user-registrations', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT 
+                id, 
+                username, 
+                email, 
+                role, 
+                created_at 
+             FROM users 
+             ORDER BY created_at DESC`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("[API /admin/reports/user-registrations] Error:", err.message);
+        res.status(500).send("Server error");
+    }
+});
+
+// GET: All Listings Report
+app.get('/api/admin/reports/all-listings', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT 
+                v.id AS listing_id, 
+                v.title, 
+                v.price, 
+                v.make, 
+                v.model, 
+                v.year,
+                v.is_rentable,
+                v.created_at AS listed_on,
+                u.id AS user_id, 
+                u.username AS seller_username
+             FROM vehicles v
+             JOIN users u ON v.user_id = u.id
+             ORDER BY v.created_at DESC`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("[API /admin/reports/all-listings] Error:", err.message);
+        res.status(500).send("Server error");
+    }
+});
+
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
