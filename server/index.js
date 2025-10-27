@@ -1118,23 +1118,48 @@ app.delete('/api/admin/reports/:id', authenticateToken, isAdmin, async (req, res
 
 // --- ADMIN REPORTING ENDPOINTS ---
 
-// GET: User Registration Report
+// GET: User Registration Report (MODIFIED to accept role filter)
 app.get('/api/admin/reports/user-registrations', authenticateToken, isAdmin, async (req, res) => {
+    const { role } = req.query; // Get role from query parameter (e.g., ?role=seller)
+    let query = `
+        SELECT
+            id,
+            username,
+            email,
+            phone, -- Added phone
+            role,
+            created_at
+        FROM users
+    `;
+    const queryParams = [];
+    let roleFilterApplied = false;
+
+    // Add WHERE clause only if a valid role is specified
+    if (role === 'seller' || role === 'buyer') {
+        query += ` WHERE role = $1`;
+        queryParams.push(role);
+        roleFilterApplied = true;
+    } else if (role === 'admin') {
+         query += ` WHERE role = $1`; // Allow filtering admins if needed later
+         queryParams.push(role);
+         roleFilterApplied = true;
+    }
+    // If role is 'all' or invalid/missing, no WHERE clause is added, fetching all users except maybe admins
+
+    // Optional: Exclude admins from 'all' report if desired
+    // if (!roleFilterApplied) {
+    //     query += ` WHERE role != 'admin'`;
+    // }
+
+    query += ` ORDER BY created_at DESC`;
+
     try {
-        const result = await pool.query(
-            `SELECT 
-                id, 
-                username, 
-                email, 
-                role, 
-                created_at 
-             FROM users 
-             ORDER BY created_at DESC`
-        );
+        const result = await pool.query(query, queryParams);
+        console.log(`[API Report] Generated user report ${roleFilterApplied ? `for role: ${role}` : 'for all roles'} with ${result.rowCount} users.`);
         res.json(result.rows);
     } catch (err) {
-        console.error("[API /admin/reports/user-registrations] Error:", err.message);
-        res.status(500).send("Server error");
+        console.error(`[API /admin/reports/user-registrations?role=${role}] Error:`, err.message);
+        res.status(500).send("Server error generating user report.");
     }
 });
 

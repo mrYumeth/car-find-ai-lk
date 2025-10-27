@@ -119,6 +119,9 @@ const AdminDashboard = () => {
   // **NEW**: State for the seller report dropdown
   const [selectedSellerId, setSelectedSellerId] = useState<string>("");
 
+  // **NEW**: State for user report role filter
+  const [selectedUserRoleReport, setSelectedUserRoleReport] = useState<string>("all"); // Default to 'all'
+
   // --- Fetch Users Function ---
   const fetchUsers = async () => { /* ... fetchUsers ... */
     setLoadingUsers(true);
@@ -377,19 +380,24 @@ const AdminDashboard = () => {
   };
 
 
-// --- **MODIFIED**: Report Generation Functions (for PDF) ---
+// --- Report Generation Functions (for PDF) ---
 
-  /**
-   * Generates and downloads a PDF report from fetched data.
-   */
-  const handleGenerateReport = async (reportType: 'user-registrations' | 'all-listings' | 'reported-listings' | 'listings-by-seller') => {
-      setIsReportDownloading(reportType);
-      const token = localStorage.getItem('token');
-      if (!token) {
-          toast({ title: "Error", description: "Authentication token missing.", variant: "destructive" });
-          setIsReportDownloading(null);
-          return;
-      }
+ const handleGenerateReport = async (reportType: 'user-registrations' | 'all-listings' | 'reported-listings' | 'listings-by-seller') => {
+    // Check if a seller is required but not selected
+    if (reportType === 'listings-by-seller' && !selectedSellerId) {
+        toast({ title: "Select Seller", description: "Please select a seller before generating this report.", variant: "destructive" });
+        return;
+    }
+
+    const reportIdentifier = reportType === 'user-registrations' ? `${reportType}-${selectedUserRoleReport}` : reportType;
+    setIsReportDownloading(reportIdentifier); // Set busy state with unique identifier if needed
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+        toast({ title: "Error", description: "Authentication token missing.", variant: "destructive" });
+        setIsReportDownloading(null);
+        return;
+    }
 
     console.log(`Generating report: ${reportType}`);
     let endpoint = '';
@@ -397,19 +405,22 @@ const AdminDashboard = () => {
     let tableHeaders: string[] = [];
     let tableDataExtractor: (item: any) => string[];
     let sellerName = ""; // Variable to hold seller name for the report
+    let roleName = selectedUserRoleReport.charAt(0).toUpperCase() + selectedUserRoleReport.slice(1);
 
     // Configure based on report type
     switch (reportType) {
       case 'user-registrations':
-        endpoint = 'http://localhost:3001/api/admin/reports/user-registrations';
-        reportTitle = 'User Registrations Report';
-        tableHeaders = ["ID", "Username", "Email", "Role", "Registered On"];
+        // **MODIFIED**: Append role query parameter if needed
+        endpoint = `http://localhost:3001/api/admin/reports/user-registrations`;
+        if (selectedUserRoleReport !== 'all') {
+            endpoint += `?role=${selectedUserRoleReport}`;
+            reportTitle = `${roleName} Registrations Report`;
+        } else {
+            reportTitle = 'All User Registrations Report';
+        }
+        tableHeaders = ["ID", "Username", "Email", "Phone", "Role", "Registered On"]; // Added Phone
         tableDataExtractor = (user: User) => [
-          String(user.id),
-          user.username,
-          user.email,
-          user.role,
-          formatDate(user.created_at) // Use existing formatDate helper
+          String(user.id), user.username, user.email, user.phone || 'N/A', user.role, formatDate(user.created_at)
         ];
         break;
       case 'all-listings':
@@ -526,12 +537,12 @@ const AdminDashboard = () => {
             doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
         }
 
-
-      // Save the PDF
-      const filename = `${reportType}_${new Date().toISOString().split('T')[0]}.pdf`;
+      // **MODIFIED**: Filename includes role/seller if applicable
+      const userRoleSuffix = reportType === 'user-registrations' ? `${roleName.toLowerCase().replace(/ /g, '_')}_` : '';
+      const sellerSuffix = reportType === 'listings-by-seller' ? `${sellerName.replace(/ /g, '_')}_` : '';
+      const filename = `${reportType}_${userRoleSuffix}${sellerSuffix}${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(filename);
       // --- End PDF Generation ---
-
 
       toast({ title: "Report Generated", description: `${filename} download initiated.` });
 
@@ -927,109 +938,116 @@ const AdminDashboard = () => {
                  </Card>
             </TabsContent>
 
-            {/* --- **MODIFIED**: System Reports Tab --- */}
-                        <TabsContent value="systemReports" className="space-y-6">
-                          <Card>
-                            <CardHeader>
-                              <CardTitle>System Reports</CardTitle>
-                              <p className="text-sm text-muted-foreground pt-1">
-                                Download system data as PDF files. Generation might take a moment.
-                              </p>
-                            </CardHeader>
-                            <CardContent className="space-y-6">
-                              {/* Report Sections */}
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+{/* --- **MODIFIED**: System Reports Tab --- */}
+            <TabsContent value="systemReports" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>System Reports</CardTitle>
+                   <p className="text-sm text-muted-foreground pt-1">
+                    Download system data as PDF files. Generation might take a moment.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                   {/* Report Sections */}
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-                                  {/* User Reports */}
-                                  <Card className="shadow-sm">
-                                    <CardHeader>
-                                      <CardTitle className="text-lg flex items-center gap-2"><Users className="h-5 w-5"/> User Data</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="flex flex-col gap-3">
-                                      <Button
-                                          onClick={() => handleGenerateReport('user-registrations')}
-                                          disabled={!!isReportDownloading} // Disable if any report is downloading
-                                          variant="outline"
-                                        >
-                                          <Download className="h-4 w-4 mr-2" />
-                                          {isReportDownloading === 'user-registrations' ? "Generating..." : "Download User List"}
-                                      </Button>
-                                      {/* Add more user-related reports here */}
-                                    </CardContent>
-                                  </Card>
+                      {/* User Reports */}
+                      <Card className="shadow-sm">
+                        <CardHeader>
+                          <CardTitle className="text-lg flex items-center gap-2"><Users className="h-5 w-5"/> User Data</CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-3">
+                           {/* **NEW**: User Role Selector */}
+                           <Label htmlFor="user-role-report-select">Select User Type</Label>
+                           <Select value={selectedUserRoleReport} onValueChange={setSelectedUserRoleReport}>
+                               <SelectTrigger id="user-role-report-select" className="w-full">
+                                   <SelectValue placeholder="Select user type..." />
+                               </SelectTrigger>
+                               <SelectContent>
+                                   <SelectItem value="all">All Users</SelectItem>
+                                   <SelectItem value="seller">Sellers Only</SelectItem>
+                                   <SelectItem value="buyer">Buyers Only</SelectItem>
+                                   {/* You could add 'admin' here if needed */}
+                               </SelectContent>
+                           </Select>
+                           <Button
+                              onClick={() => handleGenerateReport('user-registrations')}
+                              disabled={!!isReportDownloading}
+                              variant="default" // Changed variant
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              {isReportDownloading === `user-registrations-${selectedUserRoleReport}` ? "Generating..." : `Download ${selectedUserRoleReport === 'all' ? 'All Users' : selectedUserRoleReport === 'seller' ? 'Sellers' : 'Buyers'} (PDF)`}
+                           </Button>
+                        </CardContent>
+                      </Card>
 
-                                  {/* Listing Reports */}
-                                  <Card className="shadow-sm">
-                                    <CardHeader>
-                                      <CardTitle className="text-lg flex items-center gap-2"><Car className="h-5 w-5"/> Listing Data</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="flex flex-col gap-3">
-                                      <Button
-                                          onClick={() => handleGenerateReport('all-listings')}
-                                          disabled={!!isReportDownloading}
-                                          variant="outline"
-                                        >
-                                          <Download className="h-4 w-4 mr-2" />
-                                          {isReportDownloading === 'all-listings' ? "Generating..." : "Download All Listings"}
-                                        </Button>
-                                        {/* Add more listing-related reports here */}
-                                    </CardContent>
-                                  </Card>
+                      {/* Listing Reports (Grouped General & By Seller) */}
+                      <Card className="shadow-sm">
+                        <CardHeader>
+                          <CardTitle className="text-lg flex items-center gap-2"><Car className="h-5 w-5"/> Listing Data</CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-3">
+                           {/* All Listings Report Button */}
+                           <Button
+                              onClick={() => handleGenerateReport('all-listings')}
+                              disabled={!!isReportDownloading}
+                              variant="outline"
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              {isReportDownloading === 'all-listings' ? "Generating..." : "Download All Listings (PDF)"}
+                            </Button>
+                            {/* Listings by Seller Section */}
+                            <div className="pt-4 border-t mt-2">
+                                <Label htmlFor="seller-select" className="mb-2 block font-medium">Listings by Seller</Label>
+                                <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
+                                    <SelectTrigger id="seller-select" className="w-full mb-3">
+                                        <SelectValue placeholder="Select a seller..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {/* Populate with actual sellers */}
+                                        {users.filter(u => u.role === 'seller').map(seller => (
+                                            <SelectItem key={seller.id} value={String(seller.id)}>
+                                                {seller.username} (ID: {seller.id})
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                               <Button
+                                  onClick={() => handleGenerateReport('listings-by-seller')}
+                                  disabled={!!isReportDownloading || !selectedSellerId}
+                                  variant="default" // Changed variant
+                                >
+                                  <FileText className="h-4 w-4 mr-2" />
+                                  {isReportDownloading === 'listings-by-seller' ? "Generating..." : "Download Seller's Listings (PDF)"}
+                               </Button>
+                            </div>
+                        </CardContent>
+                      </Card>
 
-                                  {/* Reported Content Reports */}
-                                  <Card className="shadow-sm">
-                                    <CardHeader>
-                                      <CardTitle className="text-lg flex items-center gap-2"><Flag className="h-5 w-5"/> Reported Content</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="flex flex-col gap-3">
-                                      <Button
-                                          onClick={() => handleGenerateReport('reported-listings')}
-                                          disabled={!!isReportDownloading}
-                                          variant="outline"
-                                        >
-                                          <Download className="h-4 w-4 mr-2" />
-                                          {isReportDownloading === 'reported-listings' ? "Generating..." : "Download Pending Reports"}
-                                      </Button>
-                                      {/* Add more content-related reports here */}
-                                    </CardContent>
-                                  </Card>    
-                                  {/* **NEW**: Listings by Seller Report */}
-                                  <Card className="shadow-sm">
-                                    <CardHeader>
-                                      <CardTitle className="text-lg flex items-center gap-2"><Users className="h-5 w-5"/> Listings by Seller</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="flex flex-col gap-3">
-                                        <Label htmlFor="seller-select">Select a Seller</Label>
-                                        <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
-                                            <SelectTrigger id="seller-select" className="w-full">
-                                                <SelectValue placeholder="Select a seller to generate report" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {/* Use the 'sellers' array we already have, but filter from 'users' to get all sellers */}
-                                                {users.filter(u => u.role === 'seller').map(seller => (
-                                                    <SelectItem key={seller.id} value={String(seller.id)}>
-                                                        {seller.username} (ID: {seller.id})
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                      <Button
-                                          onClick={() => handleGenerateReport('listings-by-seller')}
-                                          disabled={!!isReportDownloading || !selectedSellerId} // Disable if no seller is selected
-                                          variant="default" // Make it the primary action for this card
-                                        >
-                                          <FileText className="h-4 w-4 mr-2" />
-                                          {isReportDownloading === 'listings-by-seller' ? "Generating..." : "Download Seller's Listings (PDF)"}
-                                      </Button>
-                                    </CardContent>
-                                  </Card>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </TabsContent>
-                      </Tabs>
-                    </div>
-                  </div>
+                      {/* Reported Content Reports */}
+                      <Card className="shadow-sm md:col-span-2"> {/* Span across columns if layout allows */}
+                        <CardHeader>
+                          <CardTitle className="text-lg flex items-center gap-2"><Flag className="h-5 w-5"/> Reported Content</CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-3">
+                           <Button
+                              onClick={() => handleGenerateReport('reported-listings')}
+                              disabled={!!isReportDownloading}
+                              variant="outline"
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              {isReportDownloading === 'reported-listings' ? "Generating..." : "Download Pending Reports (PDF)"}
+                           </Button>
+                        </CardContent>
+                      </Card>
+
+                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
 
       {/* --- (All Dialogs remain the same) --- */}
       {/* ... (Edit User Dialog) ... */}
