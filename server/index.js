@@ -688,6 +688,7 @@ app.get('/api/search/nlp', async (req, res) => {
              queryParams.push(extractedEntities.fuel_type); // Match exact fuel type from NLP
         }
 
+        dbQuery += ` AND v.status = 'approved' `;        
         dbQuery += ` ORDER BY v.created_at DESC`;
 
         // --- Step 3: Execute Query ---
@@ -745,6 +746,7 @@ async function fallbackKeywordSearch(queryText, res) {
                OR LOWER(v.model) LIKE $1
                OR LOWER(v.location) LIKE $1
                OR LOWER(v.description) LIKE $1
+               AND v.status = 'approved' 
             ORDER BY v.created_at DESC`,
             [searchTermPattern]
         );
@@ -917,6 +919,7 @@ app.get('/api/admin/vehicles', authenticateToken, isAdmin, async (req, res) => {
                 (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) as image
              FROM vehicles v
              JOIN users u ON v.user_id = u.id
+             WHERE v.status = 'approved' 
              ORDER BY v.created_at DESC`
         );
         
