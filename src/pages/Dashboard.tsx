@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Car, MessageCircle, Heart, Eye, Edit, Trash2, Plus, TrendingUp, Key } from "lucide-react";
+import { Car, MessageCircle, Heart, Eye, Edit, Trash2, Plus, TrendingUp, Key, Clock, DollarSign} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +27,8 @@ const Dashboard = () => {
   const [mainActiveTab, setMainActiveTab] = useState("myListings"); // 'myListings' or 'submitted'
   const [myListingsSubTab, setMyListingsSubTab] = useState("sale"); // 'sale' or 'rent'
   const [submittedSubTab, setSubmittedSubTab] = useState("sale"); // 'sale' or 'rent'
-  const [unreadMessageCount, setUnreadMessageCount] = useState<number>(0);
+  const [unreadMessageCount, setUnreadMessageCount] = useState<number>(0); // Unread message count
+  const [totalValue, setTotalValue] = useState<number>(0);   // For total value 
 
   const fetchMyListings = async (token: string) => { // Accept token as argument
     try {
@@ -60,6 +61,22 @@ const Dashboard = () => {
       }
   };
 
+  // +++ NEW Function to fetch total value +++
+  const fetchTotalValue = async (token: string) => {
+      try {
+          const response = await fetch('http://localhost:3001/api/seller/stats/active-value', {
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!response.ok) throw new Error("Failed to fetch total value");
+          const data = await response.json();
+          setTotalValue(data.totalValue || 0);
+      } catch (error) {
+          console.error("Error fetching total value:", error);
+          // Optional: Show a toast if fetching value fails
+          // toast({ title: "Info", description: "Could not fetch total listing value.", variant: "default" });
+      }
+  };
+
   // --- Add filtering logic ---
   const activeListings = myListings.filter(l => l.status === 'approved'); // <<< ADD THIS LINE
   const approvedOrRejectedListings = myListings.filter(l => l.status === 'approved' || l.status === 'rejected');
@@ -79,6 +96,7 @@ useEffect(() => {
     // Fetch both listings and unread count on mount
     fetchMyListings(token);
     fetchUnreadCount(token); // Fetch count
+    fetchTotalValue(token); // Total Value
   }, [navigate]); // Only run on mount or if navigate changes
 
   const handleDelete = async (vehicleId: number) => {
@@ -174,13 +192,15 @@ useEffect(() => {
                 <div className="text-gray-600">Active Listings</div>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="p-6 text-center">
-                 <Eye className="h-8 w-8 text-green-600 mx-auto mb-2" />
-                 <div className="text-2xl font-bold text-gray-800">434</div> {/* Placeholder */}
-                 <div className="text-gray-600">Total Views</div>
-               </CardContent>
-             </Card>
+        <Card>
+          <CardContent className="p-6 text-center">
+            <DollarSign className="h-8 w-8 text-purple-600 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-gray-800">
+              Rs. {totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} {/* Format as currency with no decimals */}
+            </div>
+            <div className="text-gray-600">Value (Approved Sale)</div> {/* Updated label */}
+          </CardContent>
+        </Card>
             <Card>
               <CardContent className="p-6 text-center">
                 <MessageCircle className="h-8 w-8 text-orange-500 mx-auto mb-2" />
@@ -189,13 +209,14 @@ useEffect(() => {
                 <div className="text-gray-600">New Messages</div>
               </CardContent>
             </Card>
-            <Card>
-               <CardContent className="p-6 text-center">
-                 <Heart className="h-8 w-8 text-red-500 mx-auto mb-2" />
-                 <div className="text-2xl font-bold text-gray-800">15</div> {/* Placeholder */}
-                 <div className="text-gray-600">Favorites</div>
-               </CardContent>
-             </Card>
+              {/* +++ NEW Pending Listings Card +++ */}
+              <Card>
+                <CardContent className="p-6 text-center">
+                  <Clock className="h-8 w-8 text-yellow-500 mx-auto mb-2" />
+                  <div className="text-2xl font-bold text-gray-800">{pendingListings.length}</div>
+                  <div className="text-gray-600">Pending Approval</div>
+                </CardContent>
+              </Card>
           </div>
 
           {/* +++ NEW NESTED TABS STRUCTURE +++ */}

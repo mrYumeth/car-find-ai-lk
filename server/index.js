@@ -593,6 +593,27 @@ app.get('/api/chats/unread-count', authenticateToken, async (req, res) => {
     }
 });
 
+// +++ NEW: GET total value of active listings (FOR SALE ONLY) for seller +++
+app.get('/api/seller/stats/active-value', authenticateToken, async (req, res) => {
+    const sellerId = req.user.id;
+    try {
+        const valueResult = await pool.query(
+            `SELECT SUM(v.price) AS total_value
+             FROM vehicles v
+             WHERE v.user_id = $1
+               AND v.status = 'approved'
+               AND v.is_rentable = FALSE`, // Only sum approved listings FOR SALE
+            [sellerId]
+        );
+        // Convert sum (which might be null if no listings) to number
+        const totalValue = parseFloat(valueResult.rows[0].total_value || '0');
+        res.json({ totalValue });
+    } catch (err) {
+        console.error("Error fetching total value for seller:", err.message);
+        res.status(500).send("Server error fetching total value");
+    }
+});
+
 // POST: Create a new report (Authenticated Users)
 app.post('/api/reports', authenticateToken, async (req, res) => {
     const { vehicleId, reason, description } = req.body;
