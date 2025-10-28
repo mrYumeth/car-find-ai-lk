@@ -1322,6 +1322,40 @@ app.put('/api/admin/vehicles/:id/status', authenticateToken, isAdmin, async (req
     }
 });
 
+// +++ NEW: Price Estimation Passthrough +++
+app.post('/api/price-estimate', authenticateToken, async (req, res) => {
+    // We only need the features the model was trained on
+    const { make, model, year, mileage, fuel_type, transmission, condition } = req.body;
+
+    // Basic validation
+    if (!make || !model || !year || !mileage) {
+        return res.status(400).json({ error: "Missing required fields for price estimation." });
+    }
+
+    try {
+        const pythonServiceUrl = 'http://localhost:5000/estimate-price';
+        const response = await fetch(pythonServiceUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ make, model, year, mileage, fuel_type, transmission, condition })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("Python price service error:", errText);
+            throw new Error(`Price estimation service failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        res.json(data);
+
+    } catch (err) {
+        console.error("Error calling price estimation service:", err.message);
+        res.status(500).send("Server error calling estimation service.");
+    }
+});
+// +++ END NEW ROUTE +++
+
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 // **Import Flag icon**
-import { Car, MapPin, Fuel, Gauge, Calendar, MessageCircle, Phone, Key, DollarSign, User, Mail, Flag } from "lucide-react";
+import { Car, MapPin, Fuel, Gauge, Calendar, MessageCircle, Phone, Key, DollarSign, User, Mail, Flag, Sparkles, Loader2, CheckCircle, TrendingDown, TrendingUp } from "lucide-react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +44,59 @@ interface SellerInfo {
     role: string;
 }
 
+// +++ NEW: Price Suggestion Interface +++
+interface PriceSuggestion {
+  estimated_price: number;
+  price_range_low: number;
+  price_range_high: number;
+}
+
+// +++ NEW: Price Evaluation Component +++
+const PriceEvaluationBadge: React.FC<{ vehiclePrice: number, suggestion: PriceSuggestion | null, loading: boolean }> = ({ vehiclePrice, suggestion, loading }) => {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 p-3 mt-4 bg-gray-100 rounded-md">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-sm text-gray-600">Evaluating market price...</span>
+      </div>
+    );
+  }
+  if (!suggestion || !vehiclePrice) return null;
+
+  const { price_range_low, price_range_high } = suggestion;
+  
+  if (vehiclePrice < price_range_low) {
+    return (
+      <div className="flex items-center gap-2 p-3 mt-4 bg-green-50 border border-green-300 rounded-md">
+        <TrendingDown className="h-5 w-5 text-green-600" />
+        <div>
+          <span className="font-bold text-green-700">Great Deal</span>
+          <p className="text-sm text-green-600">Price is below the estimated market value of Rs. {price_range_low.toLocaleString()}.</p>
+        </div>
+      </div>
+    );
+  } else if (vehiclePrice > price_range_high) {
+    return (
+      <div className="flex items-center gap-2 p-3 mt-4 bg-yellow-50 border border-yellow-300 rounded-md">
+        <TrendingUp className="h-5 w-5 text-yellow-600" />
+         <div>
+          <span className="font-bold text-yellow-700">Above Market</span>
+          <p className="text-sm text-yellow-600">Price is above the estimated market value of Rs. {price_range_high.toLocaleString()}.</p>
+        </div>
+      </div>
+    );
+  } else {
+    return (
+      <div className="flex items-center gap-2 p-3 mt-4 bg-blue-50 border border-blue-300 rounded-md">
+        <CheckCircle className="h-5 w-5 text-blue-600" />
+         <div>
+          <span className="font-bold text-blue-700">Fair Price</span>
+          <p className="text-sm text-blue-600">Price is within the estimated market value.</p>
+        </div>
+      </div>
+    );
+  }
+};
 
 const VehicleDetail = () => {
     const { id } = useParams<{ id: string }>();
@@ -54,6 +107,10 @@ const VehicleDetail = () => {
     const [mainImage, setMainImage] = useState<string | undefined>(undefined);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [loggedInUserId, setLoggedInUserId] = useState<number | null>(null); // **NEW**
+
+    // +++ NEW State for price evaluation +++
+    const [priceEvaluation, setPriceEvaluation] = useState<PriceSuggestion | null>(null);
+    const [loadingEvaluation, setLoadingEvaluation] = useState(true);
 
     // Function to log the view
     const logVehicleView = async (vehicleId: string) => { /* ... logVehicleView (no change) ... */
@@ -101,6 +158,7 @@ const VehicleDetail = () => {
 
         const fetchVehicle = async () => {
             setLoading(true);
+            setLoadingEvaluation(true); // Start loading evaluation
             try {
                 const response = await fetch(`http://localhost:3001/api/vehicles/${id}`);
                 if (!response.ok) {
@@ -114,6 +172,38 @@ const VehicleDetail = () => {
                     : "/placeholder.svg";
                 setMainImage(firstImageUrl);
 
+                // ++ After fetching vehicle, fetch its price evaluation ++
+                if (data && !data.is_rentable) { // Only evaluate if FOR SALE
+                    const token = localStorage.getItem('token');
+                    if (token) { // Only run if logged in
+                        try {
+                            const evalResponse = await fetch('http://localhost:3001/api/price-estimate', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${token}`
+                                },
+                                body: JSON.stringify({
+                                    make: data.make,
+                                    model: data.model,
+                                    year: data.year,
+                                    mileage: data.mileage,
+                                    fuel_type: data.fuel_type,
+                                    transmission: data.transmission,
+                                    condition: data.condition
+                                })
+                            });
+                            if (evalResponse.ok) {
+                                const evalData = await evalResponse.json();
+                                setPriceEvaluation(evalData);
+                            }
+                        } catch (evalError) {
+                            console.error("Failed to fetch price evaluation:", evalError);
+                        }
+                    }
+                }
+                // ++ End price evaluation fetch ++
+
                 await logVehicleView(id!);
 
             } catch (error) {
@@ -121,6 +211,7 @@ const VehicleDetail = () => {
                 toast({ title: "Error", description: `Could not load listing: ${(error as Error).message}`, variant: "destructive" });
             } finally {
                 setLoading(false);
+                setLoadingEvaluation(false); // Stop loading evaluation
             }
         };
 
@@ -131,6 +222,7 @@ const VehicleDetail = () => {
            toast({ title: "Error", description: "Invalid vehicle ID.", variant: "destructive" });
            navigate('/');
            setLoading(false);
+           setLoadingEvaluation(false);
         }
 
     }, [id, navigate, toast]);
@@ -191,7 +283,6 @@ const VehicleDetail = () => {
     
     // **NEW: Check if the logged-in user is the seller**
     const isSeller = loggedInUserId === vehicle.seller_id;
-
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -262,13 +353,23 @@ const VehicleDetail = () => {
 
                     {/* --- Right Column: Seller & Price --- */}
                     <div className="space-y-6">
-
                         {/* Price Card */}
                         <Card className="bg-blue-600 text-white shadow-lg">
-                           {/* ... Price Card (no change) ... */}
                            <CardContent className="p-6 text-center">
                                 <p className="text-lg font-medium mb-1">{vehicle.is_rentable ? 'Price Per Day' : 'Selling Price'}</p>
                                 <h2 className="text-4xl font-extrabold mb-4">Rs. {displayPrice}</h2>
+                                
+                                {/* +++ Price Evaluation Badge (Buyer-side) +++ */}
+                                <div className="mb-4"> {/* <<< WRAPPER DIV WITH MARGIN BOTTOM */}
+                                  {isLoggedIn && !isSeller && !vehicle.is_rentable && (
+                                      <PriceEvaluationBadge
+                                          vehiclePrice={Number(vehicle.price)}
+                                          suggestion={priceEvaluation}
+                                          loading={loadingEvaluation}
+                                      />
+                                  )}
+                                </div>
+                                {/* +++ End Badge +++ */}
                                 <Button className="w-full bg-white text-blue-600 hover:bg-gray-100 font-semibold py-6 text-lg">
                                     <DollarSign className="h-5 w-5 mr-2" /> {vehicle.is_rentable ? 'Book Now' : 'Make an Offer'}
                                 </Button>

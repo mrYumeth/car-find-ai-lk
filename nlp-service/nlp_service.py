@@ -3,6 +3,8 @@ from flask import Flask, request, jsonify
 import spacy
 import re
 from flask_cors import CORS # Import CORS
+import joblib # ++ Import joblib
+import pandas as pd # ++ Import pandas
 
 app = Flask(__name__)
 CORS(app) # ++ Enable CORS for all routes
@@ -15,6 +17,21 @@ except OSError:
     print("spaCy model 'en_core_web_sm' not found.")
     print("Download it by running: python -m spacy download en_core_web_sm")
     nlp = None # Set nlp to None if model loading fails
+
+# +++ LOAD THE TRAINED PRICE MODEL AND PREPROCESSOR +++
+try:
+    price_model_pipeline = joblib.load('price_model.pkl') 
+    # Load the dictionary containing the fitted preprocessor and columns
+    preprocessor_data = joblib.load('price_model_preprocessor.pkl') 
+    fitted_preprocessor = preprocessor_data['preprocessor']
+    training_columns = preprocessor_data['columns']
+    print("Price estimation model and preprocessor loaded successfully.")
+except Exception as e:
+    print(f"Warning: Could not load price model/preprocessor. {e}")
+    price_model_pipeline = None
+    fitted_preprocessor = None
+    training_columns = None
+# +++ END LOAD MODEL +++
 
 # More robust price extraction
 def extract_price(text):
@@ -253,6 +270,79 @@ def parse_query():
 
     print(f"Final extracted entities: {entities}") # Log final results
     return jsonify(entities)
+
+# +++ CORRECTED PRICE ESTIMATE ROUTE +++
+@app.route('/estimate-price', methods=['POST'])
+def estimate_price():
+    # Check if model and preprocessor loaded correctly
+    if price_model_pipeline is None or fitted_preprocessor is None or training_columns is None: 
+        return jsonify({"error": "Price estimation model or preprocessor is not available."}), 503
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No input data"}), 400
+
+        # 1. Create DataFrame with correct column order and handle potential missing input columns
+        input_data_prepared = {}
+        for col in training_columns:
+             input_data_prepared[col] = data.get(col, None) # Use get to avoid KeyError if a field is missing
+
+        input_df = pd.DataFrame([input_data_prepared])
+        input_df = input_df[training_columns] # Ensure strict column order
+
+        # 2. Handle missing values *before* transforming (match trainer logic)
+        #    (Ensure this fill logic is robust for all expected inputs)
+        categorical_cols = ['make', 'model', 'fuel_type', 'transmission', 'condition']
+        numerical_cols = ['year', 'mileage'] # Make sure these match your trainer script
+
+        for col in categorical_cols:
+             if col in input_df.columns:
+                 # Use 'Unknown' or another placeholder consistent with your training data fillna
+                 input_df[col] = input_df[col].fillna('Unknown') 
+
+        # Example for numerical: Fill with 0 or median if they can be missing
+        # Make sure trainer handles missing numericals appropriately too (e.g., median imputation)
+        for col in numerical_cols:
+             if col in input_df.columns:
+                 # Use 0 as a simple fillna strategy here if appropriate, else match trainer
+                 input_df[col] = input_df[col].fillna(0).astype(float) # Ensure correct type after fillna
+
+
+        # 3. Apply the *entire* loaded preprocessor 
+        #    This handles OneHotEncoding & passes through numericals as defined in trainer
+        #    handle_unknown='ignore' in the trainer's OneHotEncoder is crucial here
+        processed_input = fitted_preprocessor.transform(input_df)
+
+        # 4. Predict using the regressor part of the pipeline
+        regressor = price_model_pipeline.named_steps['regressor'] 
+        prediction = regressor.predict(processed_input)
+
+        if prediction.size == 0:
+             raise Exception("Model failed to predict.")
+
+        predicted_price = float(prediction[0])
+
+        # 5. Create a simple range (e.g., +/- 7%)
+        price_low = predicted_price * 0.93
+        price_high = predicted_price * 1.07
+
+        # 6. Format and return (round to nearest 1000, ensure non-negative)
+        response = {
+            "estimated_price": max(0, int(round(predicted_price / 1000) * 1000)),
+            "price_range_low": max(0, int(round(price_low / 1000) * 1000)), 
+            "price_range_high": max(0, int(round(price_high / 1000) * 1000) )
+        }
+
+        print(f"Price estimate request for: {data}, Prediction: {response}")
+        return jsonify(response)
+
+    except Exception as e:
+        print(f"Error during price estimation: {e}")
+        import traceback
+        traceback.print_exc() # Print full traceback for debugging
+        return jsonify({"error": str(e)}), 500
+# +++ END CORRECTED ROUTE +++
 
 if __name__ == '__main__':
     print("Starting Flask NLP service on http://localhost:5000")
