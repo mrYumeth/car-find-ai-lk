@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Link } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast"; // ++ Import useToast
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -17,6 +18,7 @@ const Login = () => {
   });
 
   const navigate = useNavigate(); // <-- Add this line
+  const { toast } = useToast(); // ++ Initialize the toast hook
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -47,7 +49,12 @@ const handleSubmit = async (e: React.FormEvent) => {
       // You can save the token for future authenticated requests
       localStorage.setItem('token', token);
       console.log("Login successful, role:", role);
-      alert("Login successful!");
+      // -- Replace alert with toast
+      toast({
+        title: "Login Successful",
+        description: `Welcome back!`,
+      });
+      // -- End replacement
 
       // Route user based on their role
       switch (role) {
@@ -66,7 +73,14 @@ const handleSubmit = async (e: React.FormEvent) => {
 
     } catch (error) {
       console.error("An error occurred during login:", error);
-      alert("Login failed: " + (error as Error).message);
+
+      // -- Replace alert with destructive toast
+      toast({
+        title: "Login Failed",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+      // -- End replacement
     }
   };
 

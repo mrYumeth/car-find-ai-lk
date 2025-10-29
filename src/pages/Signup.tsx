@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Link } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast"; // ++ Import useToast
 
 const Signup = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -18,6 +19,7 @@ const Signup = () => {
     confirmPassword: "",
     userType: "buyer"
   });
+  const { toast } = useToast(); // ++ Initialize the toast hook
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
@@ -29,7 +31,13 @@ const Signup = () => {
 const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
-      alert("Passwords do not match!");
+      // -- Replace alert with destructive toast
+      toast({
+        title: "Password Mismatch",
+        description: "The passwords you entered do not match.",
+        variant: "destructive",
+      });
+      // -- End replacement
       return;
     }
 
@@ -46,7 +54,12 @@ const handleSubmit = async (e: React.FormEvent) => {
 
       if (response.ok) {
         console.log("Signup successful:", data);
-        alert("Signup successful! You can now log in.");
+        // -- Replace alert with success toast
+        toast({
+          title: "Signup Successful",
+          description: "Your account has been created. You can now log in.",
+        });
+        // -- End replacement
         
         // --- ADD THIS LINE TO CLEAR THE FORM ---
         setFormData({
@@ -60,11 +73,23 @@ const handleSubmit = async (e: React.FormEvent) => {
         
       } else {
         console.error("Signup failed:", data);
-        alert(`Signup failed: ${data}`);
+        // -- Replace alert with destructive toast
+        toast({
+          title: "Signup Failed",
+          description: data,
+          variant: "destructive",
+        });
+        // -- End replacement
       }
     } catch (error) {
       console.error("An error occurred during signup:", error);
-      alert("An error occurred. Please make sure your backend server is running.");
+      // -- Replace alert with destructive toast
+      toast({
+        title: "An Error Occurred",
+        description: "Could not connect to the server. Please try again later.",
+        variant: "destructive",
+      });
+      // -- End replacement
     }
   };
 

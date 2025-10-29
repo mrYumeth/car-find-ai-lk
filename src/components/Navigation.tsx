@@ -3,6 +3,7 @@ import { Car, Menu, User, Plus, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Link, useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast"; // ++ Import useToast
 
 const Navigation = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -10,6 +11,7 @@ const Navigation = () => {
   const [username, setUsername] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { toast } = useToast(); // ++ Initialize the toast hook
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -31,8 +33,15 @@ const Navigation = () => {
     setIsLoggedIn(false);
     setUsername(null);
     setUserRole(null);
+    window.dispatchEvent(new Event('authChange')); // Ensure other components know
+    
+    // ++ Add toast notification
+    toast({
+      title: "Logged Out",
+      description: "You have been successfully logged out.",
+    });
+    // ++ End toast    
     navigate('/');
-    alert("You have been logged out.");
   };
 
   const getLogoPath = () => {
