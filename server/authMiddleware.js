@@ -1,6 +1,6 @@
 // server/authMiddleware.js
 const jwt = require('jsonwebtoken');
-const JWT_SECRET = 'your_super_secret_and_long_jwt_key'; // Use the same secret
+const JWT_SECRET = 'your_super_secret_and_long_jwt_key'; 
 
 const authenticateToken = (req, res, next) => {
     const token = req.headers.authorization?.split(" ")[1];
@@ -16,4 +16,6 @@ const authenticateToken = (req, res, next) => {
     }
 };
 
-module.exports = authenticateToken; // Export the function
+module.exports = authenticateToken; 
+
+

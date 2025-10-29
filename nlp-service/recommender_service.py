@@ -154,11 +154,10 @@ def save_recommendations(conn, user_id, recommendations_with_scores):
             VALUES (%s, %s, %s, NOW())
         """
         data_to_insert = [
-            (user_id, rec[0], rec[1]) for rec in recommendations_with_scores if len(rec)==2 # Basic validation
+            (user_id, rec[0], rec[1]) for rec in recommendations_with_scores if len(rec)==2 
         ]
 
         if data_to_insert:
-            # Use execute_batch correctly
             psycopg2.extras.execute_batch(cursor, insert_query, data_to_insert)
             conn.commit()
             print(f"Saved {len(data_to_insert)} recommendations for user {user_id}")
@@ -191,17 +190,17 @@ def generate_recommendations_for_user(conn, user_id, num_recs=10):
             final_recs_with_scores.extend(content_recs)
 
         if len(final_recs_with_scores) < num_recs:
-            needed = num_recs # Fetch more popular ones initially
-            popular_recs = get_popularity_recommendations(conn, num_recommendations=needed + len(final_recs_with_scores)) # Fetch a bit extra
+            needed = num_recs 
+            popular_recs = get_popularity_recommendations(conn, num_recommendations=needed + len(final_recs_with_scores)) 
             
             existing_ids = {rec[0] for rec in final_recs_with_scores}
             added_popular = 0
             for pid, pscore in popular_recs:
-                if len(final_recs_with_scores) >= num_recs: # Check if we reached the target number
+                if len(final_recs_with_scores) >= num_recs: 
                      break
                 if pid not in existing_ids:
                      final_recs_with_scores.append([pid, pscore])
-                     existing_ids.add(pid) # Add to set to prevent duplicates later
+                     existing_ids.add(pid) 
                      added_popular += 1
             print(f"User {user_id}: Added {added_popular} popular recommendations.")
 

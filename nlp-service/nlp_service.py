@@ -18,7 +18,7 @@ except OSError:
     print("Download it by running: python -m spacy download en_core_web_sm")
     nlp = None # Set nlp to None if model loading fails
 
-# +++ LOAD THE TRAINED PRICE MODEL AND PREPROCESSOR +++
+# LOAD THE TRAINED PRICE MODEL AND PREPROCESSOR 
 try:
     price_model_pipeline = joblib.load('price_model.pkl') 
     # Load the dictionary containing the fitted preprocessor and columns
@@ -31,15 +31,14 @@ except Exception as e:
     price_model_pipeline = None
     fitted_preprocessor = None
     training_columns = None
-# +++ END LOAD MODEL +++
 
-# More robust price extraction
+# Robust price extraction
 def extract_price(text):
     min_price = None
     max_price = None
     text_lower = text.lower()
 
-    # Pattern: "under X million/lakh/k/rs" or "less than X ..." etc.
+    # Pattern: "under X million/lakh/k/rs" 
     match_under = re.search(r'(under|less than|below|max|maximum)\s*([\d,]+(?:\.\d+)?)\s*(m|mil|million|l|lakh|k|thousand|rs)?', text_lower)
     if match_under:
         amount = float(match_under.group(2).replace(',', ''))
@@ -50,10 +49,10 @@ def extract_price(text):
             max_price = amount * 100000
         elif unit in ['k', 'thousand']:
             max_price = amount * 1000
-        else: # Handles "rs X" or just "X" as max
+        else: 
             max_price = amount
 
-    # Pattern: "over X million/lakh/k/rs" or "more than X ..." etc.
+    # Pattern: "over X million/lakh/k/rs" 
     match_over = re.search(r'(over|above|more than|min|minimum)\s*([\d,]+(?:\.\d+)?)\s*(m|mil|million|l|lakh|k|thousand|rs)?', text_lower)
     if match_over:
         amount = float(match_over.group(2).replace(',', ''))
@@ -64,7 +63,7 @@ def extract_price(text):
             min_price = amount * 100000
         elif unit in ['k', 'thousand']:
             min_price = amount * 1000
-        else: # Handles "rs X" or just "X" as min
+        else: 
              min_price = amount
 
     # Pattern: "between X and Y (units)" or "X to Y (units)"
@@ -268,13 +267,12 @@ def parse_query():
                  entities["location"] = loc.capitalize()
                  break
 
-    print(f"Final extracted entities: {entities}") # Log final results
+    print(f"Final extracted entities: {entities}") 
     return jsonify(entities)
 
-# +++ CORRECTED PRICE ESTIMATE ROUTE +++
+# PRICE ESTIMATE ROUTE 
 @app.route('/estimate-price', methods=['POST'])
 def estimate_price():
-    # Check if model and preprocessor loaded correctly
     if price_model_pipeline is None or fitted_preprocessor is None or training_columns is None: 
         return jsonify({"error": "Price estimation model or preprocessor is not available."}), 503
 
@@ -286,32 +284,26 @@ def estimate_price():
         # 1. Create DataFrame with correct column order and handle potential missing input columns
         input_data_prepared = {}
         for col in training_columns:
-             input_data_prepared[col] = data.get(col, None) # Use get to avoid KeyError if a field is missing
+             input_data_prepared[col] = data.get(col, None) 
 
         input_df = pd.DataFrame([input_data_prepared])
-        input_df = input_df[training_columns] # Ensure strict column order
+        input_df = input_df[training_columns] 
 
         # 2. Handle missing values *before* transforming (match trainer logic)
-        #    (Ensure this fill logic is robust for all expected inputs)
         categorical_cols = ['make', 'model', 'fuel_type', 'transmission', 'condition']
-        numerical_cols = ['year', 'mileage'] # Make sure these match your trainer script
+        numerical_cols = ['year', 'mileage']
 
         for col in categorical_cols:
              if col in input_df.columns:
-                 # Use 'Unknown' or another placeholder consistent with your training data fillna
                  input_df[col] = input_df[col].fillna('Unknown') 
 
-        # Example for numerical: Fill with 0 or median if they can be missing
-        # Make sure trainer handles missing numericals appropriately too (e.g., median imputation)
+
         for col in numerical_cols:
              if col in input_df.columns:
-                 # Use 0 as a simple fillna strategy here if appropriate, else match trainer
                  input_df[col] = input_df[col].fillna(0).astype(float) # Ensure correct type after fillna
 
 
         # 3. Apply the *entire* loaded preprocessor 
-        #    This handles OneHotEncoding & passes through numericals as defined in trainer
-        #    handle_unknown='ignore' in the trainer's OneHotEncoder is crucial here
         processed_input = fitted_preprocessor.transform(input_df)
 
         # 4. Predict using the regressor part of the pipeline
@@ -323,7 +315,7 @@ def estimate_price():
 
         predicted_price = float(prediction[0])
 
-        # 5. Create a simple range (e.g., +/- 7%)
+        # 5. Create a simple range 
         price_low = predicted_price * 0.93
         price_high = predicted_price * 1.07
 
@@ -340,9 +332,8 @@ def estimate_price():
     except Exception as e:
         print(f"Error during price estimation: {e}")
         import traceback
-        traceback.print_exc() # Print full traceback for debugging
+        traceback.print_exc() 
         return jsonify({"error": str(e)}), 500
-# +++ END CORRECTED ROUTE +++
 
 if __name__ == '__main__':
     print("Starting Flask NLP service on http://localhost:5000")

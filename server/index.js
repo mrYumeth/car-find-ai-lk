@@ -407,7 +407,7 @@ app.delete('/api/vehicles/:id', authenticateToken, async (req, res) => {
 
 // --- CHAT ENDPOINTS ---
 
-// GET: Fetch all active conversations (UPDATED FOR UNREAD COUNT)
+// GET: Fetch all active conversations 
 app.get('/api/chats', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     try {
@@ -440,9 +440,9 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
     }
 });
 
-// --- NEW ENDPOINT TO FIND A CHAT ---
+// ENDPOINT TO FIND A CHAT 
 app.get('/api/chats/find', authenticateToken, async (req, res) => {
-    const userId = req.user.id; // This is the buyer
+    const userId = req.user.id; 
     const { vehicleId, sellerId } = req.query;
 
     if (!vehicleId || !sellerId) {
@@ -458,7 +458,6 @@ app.get('/api/chats/find', authenticateToken, async (req, res) => {
         if (existingChat.rows.length > 0) {
             res.json({ chatId: existingChat.rows[0].id });
         } else {
-            // No chat found, which is fine. The first message will create it.
             res.status(404).send("No existing chat found.");
         }
     } catch (err) {
@@ -658,17 +657,16 @@ app.post('/api/reports', authenticateToken, async (req, res) => {
     }
 });
 
-// ++ NEW: NLP Search Endpoint
-app.get('/api/search/nlp', async (req, res) => {
-    const queryText = req.query.q; // Get the natural language query (e.g., "q=Toyota CHR under 5 million")
+    // NLP Search Endpoint
+    app.get('/api/search/nlp', async (req, res) => {
+        const queryText = req.query.q; // Get the natural language query 
 
-    if (!queryText) {
-        return res.status(400).send("Search query is missing.");
-    }
+        if (!queryText) {
+            return res.status(400).send("Search query is missing.");
+        }
 
     try {
-        // --- Step 1: Call NLP Service ---
-        // Assuming your Python NLP service runs on localhost:5000/parse
+        // Step 1: Call NLP Service 
         const nlpResponse = await fetch(`http://localhost:5000/parse?query=${encodeURIComponent(queryText)}`);
         if (!nlpResponse.ok) {
             console.error("NLP service failed with status:", nlpResponse.status);
@@ -676,7 +674,7 @@ app.get('/api/search/nlp', async (req, res) => {
             return await fallbackKeywordSearch(queryText, res);
         }
         const extractedEntities = await nlpResponse.json();
-        console.log("Extracted Entities:", extractedEntities); // Log for debugging
+        console.log("Extracted Entities:", extractedEntities); 
 
         // Check if NLP returned any useful entities
         if (Object.values(extractedEntities).every(v => v === null)) {
@@ -684,7 +682,7 @@ app.get('/api/search/nlp', async (req, res) => {
              return await fallbackKeywordSearch(queryText, res);
         }
 
-        // --- Step 2: Build Database Query ---
+        // Step 2: Build Database Query 
         let dbQuery = `
             SELECT
                 v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.make, v.model, v.year,
@@ -692,7 +690,7 @@ app.get('/api/search/nlp', async (req, res) => {
                 (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
             FROM vehicles v
             JOIN users u ON v.user_id = u.id
-            WHERE 1=1 `; // Start with a condition that's always true
+            WHERE 1=1 `; 
 
         const queryParams = [];
         let paramIndex = 1;
@@ -703,10 +701,8 @@ app.get('/api/search/nlp', async (req, res) => {
             queryParams.push(`%${extractedEntities.make}%`);
         }
         if (extractedEntities.model) {
-             // More robust model matching might involve checking title too
             dbQuery += ` AND (LOWER(v.model) LIKE LOWER($${paramIndex++}) OR LOWER(v.title) LIKE LOWER($${paramIndex++})) `;
-            queryParams.push(`%${extractedEntities.model}%`, `%${extractedEntities.model}%`); // Add param twice
-          //paramIndex++; // Increment again because we added two placeholders
+            queryParams.push(`%${extractedEntities.model}%`, `%${extractedEntities.model}%`); 
         }
          if (extractedEntities.location) {
              // Using ILIKE for case-insensitive matching in PostgreSQL
@@ -727,18 +723,18 @@ app.get('/api/search/nlp', async (req, res) => {
         }
         if (extractedEntities.fuel_type) {
              dbQuery += ` AND v.fuel_type ILIKE $${paramIndex++} `;
-             queryParams.push(extractedEntities.fuel_type); // Match exact fuel type from NLP
+             queryParams.push(extractedEntities.fuel_type); 
         }
 
         dbQuery += ` AND v.status = 'approved' `;        
         dbQuery += ` ORDER BY v.created_at DESC`;
 
-        // --- Step 3: Execute Query ---
-        console.log("Executing DB Query:", dbQuery); // Log for debugging
-        console.log("Query Params:", queryParams); // Log for debugging
+        // Step 3: Execute Query 
+        console.log("Executing DB Query:", dbQuery); 
+        console.log("Query Params:", queryParams); 
         const results = await pool.query(dbQuery, queryParams);
 
-        // --- Step 4: Format and Return Results ---
+        // Step 4: Format and Return Results 
          const vehicles = formatVehicleResults(results.rows);
         res.json(vehicles);
 
@@ -749,58 +745,58 @@ app.get('/api/search/nlp', async (req, res) => {
     }
 });
 
-// ++ Helper function for formatting results (to avoid repetition)
-function formatVehicleResults(rows) {
-  return rows.map(row => ({
-      id: row.id,
-      title: row.title,
-      price: row.price ? Number(row.price).toLocaleString() : 'N/A',
-      location: row.location,
-      mileage: row.mileage ? `${row.mileage.toLocaleString()} km` : 'N/A',
-      fuel: row.fuel,
-      image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg',
-      make: row.make,
-      model: row.model, // Include model and year if available
-      year: row.year,
-      seller_id: row.seller_id,
-      seller_name: row.seller_name,
-      seller_phone: row.seller_phone,
-      seller_email: row.seller_email,
-      is_rentable: row.is_rentable,
-      rating: 4.5 // Placeholder rating
-  }));
-}
-
-// ++ Helper function for fallback keyword search
-async function fallbackKeywordSearch(queryText, res) {
-    console.log(`Falling back to keyword search for: "${queryText}"`);
-    try {
-         const searchTermPattern = `%${queryText.toLowerCase()}%`;
-         const results = await pool.query(
-            `SELECT
-                v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.make, v.model, v.year,
-                u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
-                (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
-            FROM vehicles v
-            JOIN users u ON v.user_id = u.id
-            WHERE LOWER(v.title) LIKE $1
-               OR LOWER(v.make) LIKE $1
-               OR LOWER(v.model) LIKE $1
-               OR LOWER(v.location) LIKE $1
-               OR LOWER(v.description) LIKE $1
-               AND v.status = 'approved' 
-            ORDER BY v.created_at DESC`,
-            [searchTermPattern]
-        );
-        const vehicles = formatVehicleResults(results.rows);
-        res.json(vehicles); // Send keyword results
-    } catch (fallbackErr) {
-        console.error("Error during fallback keyword search:", fallbackErr);
-        res.status(500).send("Error processing search query.");
+    // Helper function for formatting results (to avoid repetition)
+    function formatVehicleResults(rows) {
+    return rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        price: row.price ? Number(row.price).toLocaleString() : 'N/A',
+        location: row.location,
+        mileage: row.mileage ? `${row.mileage.toLocaleString()} km` : 'N/A',
+        fuel: row.fuel,
+        image: row.image ? `http://localhost:${port}${row.image}` : '/placeholder.svg',
+        make: row.make,
+        model: row.model, 
+        year: row.year,
+        seller_id: row.seller_id,
+        seller_name: row.seller_name,
+        seller_phone: row.seller_phone,
+        seller_email: row.seller_email,
+        is_rentable: row.is_rentable,
+        rating: 4.5 
+    }));
     }
-}
 
-// ++ NEW/MODIFIED: Endpoint to log user interactions
+    // Helper function for fallback keyword search
+    async function fallbackKeywordSearch(queryText, res) {
+        console.log(`Falling back to keyword search for: "${queryText}"`);
+        try {
+            const searchTermPattern = `%${queryText.toLowerCase()}%`;
+            const results = await pool.query(
+                `SELECT
+                    v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.make, v.model, v.year,
+                    u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
+                    (SELECT vi.image_url FROM vehicle_images vi WHERE vi.vehicle_id = v.id LIMIT 1) AS image
+                FROM vehicles v
+                JOIN users u ON v.user_id = u.id
+                WHERE LOWER(v.title) LIKE $1
+                OR LOWER(v.make) LIKE $1
+                OR LOWER(v.model) LIKE $1
+                OR LOWER(v.location) LIKE $1
+                OR LOWER(v.description) LIKE $1
+                AND v.status = 'approved' 
+                ORDER BY v.created_at DESC`,
+                [searchTermPattern]
+            );
+            const vehicles = formatVehicleResults(results.rows);
+            res.json(vehicles); 
+        } catch (fallbackErr) {
+            console.error("Error during fallback keyword search:", fallbackErr);
+            res.status(500).send("Error processing search query.");
+        }
+    }
+
+// Endpoint to log user interactions
 app.post('/api/interactions/log', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     // Type can be 'view' or 'search'
@@ -850,24 +846,21 @@ app.post('/api/interactions/log', authenticateToken, async (req, res) => {
     }
 });
 
-// ++ MODIFIED: Endpoint to get recommendations FOR the logged-in user FROM DB
-app.get('/api/recommendations', authenticateToken, async (req, res) => {
-    // Ensure req.user exists and has an id
-    if (!req.user || typeof req.user.id === 'undefined') {
-        console.error("[API /recommendations] Error: User ID not found in token payload.");
-        return res.status(401).send("User not properly authenticated.");
-    }
+    // Endpoint to get recommendations FOR the logged-in user FROM DB
+    app.get('/api/recommendations', authenticateToken, async (req, res) => {
+        if (!req.user || typeof req.user.id === 'undefined') {
+            console.error("[API /recommendations] Error: User ID not found in token payload.");
+            return res.status(401).send("User not properly authenticated.");
+        }
 
     const userIdFromToken = req.user.id;
-    const numRecs = req.query.num || 5; // Default to 5 recommendations
+    const numRecs = req.query.num || 5; 
 
-    // ++ FIX: Log the ID and its type from the token ++
+    // Log the ID and its type from the token 
     console.log(`[API /recommendations] Attempting fetch for user ID from token: ${userIdFromToken} (Type: ${typeof userIdFromToken})`);
 
-    // ++ FIX: Explicitly parse the user ID to an integer ++
     const userId = parseInt(userIdFromToken, 10);
 
-    // Check if parsing failed (e.g., if id wasn't a number string)
     if (isNaN(userId)) {
         console.error(`[API /recommendations] Error: Failed to parse user ID '${userIdFromToken}' as integer.`);
         return res.status(400).send("Invalid user identifier.");
@@ -875,9 +868,8 @@ app.get('/api/recommendations', authenticateToken, async (req, res) => {
 
     console.log(`[API /recommendations] Querying recommendations table for user_id: ${userId} (Type: ${typeof userId})`);
 
-
     try {
-        // --- Step 1: Query the recommendations table ---
+        // Step 1: Query the recommendations table 
         const recQuery = `
             SELECT r.vehicle_id
             FROM recommendations r
@@ -885,7 +877,7 @@ app.get('/api/recommendations', authenticateToken, async (req, res) => {
             ORDER BY r.score DESC, r.created_at DESC
             LIMIT $2
         `;
-        // ++ FIX: Pass the parsed integer 'userId' to the query ++
+        // Pass the parsed integer 'userId' to the query 
         const recResult = await pool.query(recQuery, [userId, numRecs]);
         const recommendedIds = recResult.rows.map(row => row.vehicle_id);
 
@@ -894,7 +886,7 @@ app.get('/api/recommendations', authenticateToken, async (req, res) => {
 
         let vehicles = [];
         if (recommendedIds.length > 0) {
-            // --- Step 2: Fetch full vehicle details ---
+            // Step 2: Fetch full vehicle details 
             const placeholders = recommendedIds.map((_, i) => `$${i + 1}`).join(',');
             const detailsQuery = `
                 SELECT
@@ -907,14 +899,12 @@ app.get('/api/recommendations', authenticateToken, async (req, res) => {
             `;
 
             const detailsResult = await pool.query(detailsQuery, recommendedIds);
-            const fetchedVehicles = formatVehicleResults(detailsResult.rows); // Use existing helper
+            const fetchedVehicles = formatVehicleResults(detailsResult.rows); 
 
-             // --- Step 3: Reorder results ---
+             // Step 3: Reorder results 
              vehicles = recommendedIds.map(id => fetchedVehicles.find(v => v.id === id)).filter(Boolean);
         } else {
-             // This log is now expected if the DB query returned no rows
              console.log(`[API /recommendations] No pre-calculated recommendations found in DB for user ${userId}. Using fallback.`);
-             // Fallback logic remains the same
              const fallbackResult = await pool.query(`
                  SELECT v.id, v.title, v.price, v.location, v.mileage, v.fuel_type AS fuel, v.is_rentable, v.make, v.model, v.year,
                         u.username AS seller_name, u.phone AS seller_phone, u.email AS seller_email, u.id AS seller_id,
@@ -952,8 +942,7 @@ app.get('/api/admin/users', authenticateToken, isAdmin, async (req, res) => {
 // GET All Vehicles (Admin Only)
 app.get('/api/admin/vehicles', authenticateToken, isAdmin, async (req, res) => {
     try {
-        // **FIX:** The query now selects v.* to get ALL columns (description, year, etc.)
-        // and includes a subquery to get the first image.
+
         const result = await pool.query(
             `SELECT
                 v.*, -- This gets all columns from the vehicles table
@@ -968,12 +957,11 @@ app.get('/api/admin/vehicles', authenticateToken, isAdmin, async (req, res) => {
          // Format price and ensure image has full URL
          const vehicles = result.rows.map(row => ({
             ...row,
-            // Convert price from decimal to string if needed, or just send raw
-            // price: row.price ? Number(row.price).toLocaleString() : 'N/A', 
-            image: row.image ? `${row.image}` : null // Just send the path
+ 
+            image: row.image ? `${row.image}` : null 
         }));
 
-        res.json(vehicles); // Send the full vehicle objects
+        res.json(vehicles); 
 
     } catch (err) {
         console.error("[API /admin/vehicles] Error fetching vehicles:", err.message);
@@ -1137,7 +1125,6 @@ app.get('/api/admin/reports', authenticateToken, isAdmin, async (req, res) => {
              ORDER BY r.created_at DESC`
         );
         
-        // Filter out reports where the vehicle or user might have been deleted
         const validReports = result.rows.filter(r => r.vehicle_title && r.reporter_username);
         
         res.json(validReports);
@@ -1165,9 +1152,9 @@ app.delete('/api/admin/reports/:id', authenticateToken, isAdmin, async (req, res
 
 // --- ADMIN REPORTING ENDPOINTS ---
 
-// GET: User Registration Report (MODIFIED to accept role filter)
+// GET: User Registration Report 
 app.get('/api/admin/reports/user-registrations', authenticateToken, isAdmin, async (req, res) => {
-    const { role } = req.query; // Get role from query parameter (e.g., ?role=seller)
+    const { role } = req.query; // Get role from query parameter 
     let query = `
         SELECT
             id,
@@ -1181,22 +1168,15 @@ app.get('/api/admin/reports/user-registrations', authenticateToken, isAdmin, asy
     const queryParams = [];
     let roleFilterApplied = false;
 
-    // Add WHERE clause only if a valid role is specified
     if (role === 'seller' || role === 'buyer') {
         query += ` WHERE role = $1`;
         queryParams.push(role);
         roleFilterApplied = true;
     } else if (role === 'admin') {
-         query += ` WHERE role = $1`; // Allow filtering admins if needed later
+         query += ` WHERE role = $1`; 
          queryParams.push(role);
          roleFilterApplied = true;
     }
-    // If role is 'all' or invalid/missing, no WHERE clause is added, fetching all users except maybe admins
-
-    // Optional: Exclude admins from 'all' report if desired
-    // if (!roleFilterApplied) {
-    //     query += ` WHERE role != 'admin'`;
-    // }
 
     query += ` ORDER BY created_at DESC`;
 
@@ -1262,7 +1242,6 @@ app.get('/api/admin/reports/listings-by-seller/:userId', authenticateToken, isAd
              ORDER BY v.created_at DESC`,
             [userId]
         );
-        // We don't need to check for rowCount === 0, an empty array is a valid report
         res.json(result.rows);
     } catch (err) {
         console.error("[API /api/admin/reports/listings-by-seller] Error:", err.message);
@@ -1322,9 +1301,8 @@ app.put('/api/admin/vehicles/:id/status', authenticateToken, isAdmin, async (req
     }
 });
 
-// +++ NEW: Price Estimation Passthrough +++
+// Price Estimation Passthrough 
 app.post('/api/price-estimate', authenticateToken, async (req, res) => {
-    // We only need the features the model was trained on
     const { make, model, year, mileage, fuel_type, transmission, condition } = req.body;
 
     // Basic validation
@@ -1354,7 +1332,6 @@ app.post('/api/price-estimate', authenticateToken, async (req, res) => {
         res.status(500).send("Server error calling estimation service.");
     }
 });
-// +++ END NEW ROUTE +++
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
