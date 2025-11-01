@@ -1,238 +1,254 @@
+// src/pages/Profile.tsx
 import { useState, useEffect } from "react";
-import { User, Camera, Lock } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { User, Lock, Car, Heart, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
 import Navigation from "@/components/Navigation";
-import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
+import VehicleCard from "@/components/VehicleCard"; // This is no longer used, but we can leave it
 
-// Define types for the user data
+// Interface for profile data
 interface UserProfile {
   id: number;
   username: string;
   email: string;
   phone: string;
   role: string;
+  created_at: string;
 }
 
-interface ProfileFormData {
-  username: string;
-  email: string;
-  phone: string;
-}
+// Interface for listings (no longer used here but kept for reference)
+// interface Vehicle { ... }
 
 const Profile = () => {
-  const { toast } = useToast();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("profile");
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  // State for the editable form fields
-  const [formData, setFormData] = useState<ProfileFormData>({
+  const { toast } = useToast();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [formData, setFormData] = useState({
     username: "",
     email: "",
     phone: "",
   });
-
+  
+  // +++ NEW State for password form +++
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
     newPassword: "",
     confirmPassword: ""
   });
-  
+  const [isPasswordUpdating, setIsPasswordUpdating] = useState(false);
+  // +++ END NEW State +++
+
+  const [loading, setLoading] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Fetch profile data
   useEffect(() => {
-    const fetchUserProfile = async () => {
+    const fetchProfile = async () => {
       const token = localStorage.getItem('token');
       if (!token) {
+        toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
         navigate('/login');
         return;
       }
 
       try {
+        setLoading(true);
         const response = await fetch('http://localhost:3001/api/profile', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-
-        if (!response.ok) throw new Error('Failed to fetch profile');
-
+        if (!response.ok) throw new Error("Failed to fetch profile");
         const data: UserProfile = await response.json();
-        setUser(data);
-        // Initialize form data with fetched user details
+        setProfile(data);
         setFormData({
-            username: data.username,
-            email: data.email,
-            phone: data.phone || ''
+          username: data.username,
+          email: data.email,
+          phone: data.phone || "",
         });
       } catch (error) {
-        console.error("Error fetching profile:", error);
-        localStorage.removeItem('token');
-        navigate('/login');
+        toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+        navigate('/');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchUserProfile();
-  }, [navigate]);
+    fetchProfile();
+  }, [navigate, toast]);
 
-  // Handle changes in the form inputs
+  // Handle profile info input change
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value } = e.target;
-    setFormData(prev => ({ ...prev, [id]: value }));
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+  
+  // +++ NEW: Handle password input change +++
+  const handlePasswordInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPasswordData({ ...passwordData, [e.target.name]: e.target.value });
   };
 
-  // --- UPDATED: Function to handle form submission ---
+  // Handle profile info update
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsUpdating(true);
     const token = localStorage.getItem('token');
-    if (!token) {
-        toast({ title: "Error", description: "You are not logged in.", variant: "destructive" });
-        return;
+    
+    try {
+      const response = await fetch('http://localhost:3001/api/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(formData)
+      });
+      if (!response.ok) {
+         const errorText = await response.text();
+         throw new Error(errorText || "Failed to update profile");
+      }
+      const updatedProfile: UserProfile = await response.json();
+      setProfile(updatedProfile);
+      setFormData({
+        username: updatedProfile.username,
+        email: updatedProfile.email,
+        phone: updatedProfile.phone || "",
+      });
+      toast({ title: "Success!", description: "Your profile has been updated." });
+      // Update username in nav
+      window.dispatchEvent(new Event('authChange')); 
+    } catch (error) {
+      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+    } finally {
+      setIsUpdating(false);
     }
+  };
+
+  // +++ NEW: Handle Password Change Submit +++
+  const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Client-side validation
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      toast({ title: "Error", description: "Please fill in all password fields.", variant: "destructive" });
+      return;
+    }
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast({ title: "Error", description: "New passwords do not match.", variant: "destructive" });
+      return;
+    }
+    if (passwordData.newPassword.length < 6) {
+       toast({ title: "Error", description: "New password must be at least 6 characters long.", variant: "destructive" });
+       return;
+    }
+
+    setIsPasswordUpdating(true);
+    const token = localStorage.getItem('token');
 
     try {
-        const response = await fetch('http://localhost:3001/api/profile', {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(formData)
-        });
+      const response = await fetch('http://localhost:3001/api/profile/change-password', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          currentPassword: passwordData.currentPassword,
+          newPassword: passwordData.newPassword
+        })
+      });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || "Failed to update profile");
-        }
+      const responseText = await response.text(); // Get text response regardless of ok status
 
-        const updatedUser = await response.json();
-        setUser(updatedUser); // Update the main user state to reflect changes
+      if (!response.ok) {
+         throw new Error(responseText || "Failed to change password.");
+      }
 
-        toast({
-            title: "Profile Updated",
-            description: "Your information has been saved successfully.",
-        });
-        
-        // Note: The username in the navigation bar will update on the next page refresh.
+      toast({ title: "Success!", description: responseText });
+      // Clear password fields
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: ""
+      });
 
     } catch (error) {
-        console.error("Error updating profile:", error);
-        toast({
-            title: "Update Failed",
-            description: (error as Error).message,
-            variant: "destructive",
-        });
+      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+    } finally {
+      setIsPasswordUpdating(false);
     }
   };
 
-  const handlePasswordChange = (e: React.FormEvent) => {
-    // ... (password change logic remains the same)
-  };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50">
+      <div className="min-h-screen bg-gray-50">
         <Navigation />
-        <div className="container mx-auto px-4 py-8 text-center">Loading profile...</div>
+        <div className="container mx-auto px-4 py-8 max-w-4xl">
+          <Skeleton className="h-10 w-1/3 mb-6" />
+          <Card>
+            <CardHeader><Skeleton className="h-8 w-1/4" /></CardHeader>
+            <CardContent className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
 
-  if (!user) {
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50">
-            <Navigation />
-            <div className="container mx-auto px-4 py-8 text-center">Could not load profile. Please log in again.</div>
-        </div>
-    );
-  }
+  if (!profile) return null; // Should be handled by loading/redirect
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50">
       <Navigation />
-      
       <div className="container mx-auto px-4 py-8">
-        <div className="max-w-5xl mx-auto">
-          {/* Profile Header */}
-          <Card className="mb-8">
-            <CardContent className="p-8">
-              <div className="flex flex-col md:flex-row items-center gap-6">
-                <div className="relative">
-                  <Avatar className="h-32 w-32">
-                    <AvatarImage src="/placeholder.svg" />
-                    <AvatarFallback className="text-2xl">
-                      {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
-                    </AvatarFallback>
-                  </Avatar>
-                  <Button size="icon" className="absolute bottom-0 right-0 rounded-full bg-blue-600 hover:bg-blue-700">
-                    <Camera className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="text-center md:text-left flex-1">
-                  <h1 className="text-3xl font-bold text-gray-800 mb-2">{user.username}</h1>
-                  <p className="text-muted-foreground mb-3">{user.email}</p>
-                  <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                    <Badge variant="secondary">
-                      <User className="h-3 w-3 mr-1" />
-                      {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-4xl font-bold text-gray-800 mb-8">My Profile</h1>
 
-          {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="profile">Profile Info</TabsTrigger>
-              <TabsTrigger value="listings">My Listings</TabsTrigger>
-              <TabsTrigger value="favorites">Favorites</TabsTrigger>
-              <TabsTrigger value="security">Security</TabsTrigger>
+          {/* --- MODIFIED TABS --- */}
+          <Tabs defaultValue="profile" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="profile">
+                <User className="h-4 w-4 mr-2" /> Profile Info
+              </TabsTrigger>
+              <TabsTrigger value="security">
+                <Lock className="h-4 w-4 mr-2" /> Security
+              </TabsTrigger>
             </TabsList>
-
+            
+            {/* --- Profile Info Tab --- */}
             <TabsContent value="profile">
               <Card>
                 <CardHeader>
                   <CardTitle>Personal Information</CardTitle>
+                  <CardDescription>Update your personal details here.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {/* --- UPDATED: Form now uses state and onChange handlers --- */}
                   <form onSubmit={handleProfileUpdate} className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="username">Full Name</Label>
-                        <Input
-                          id="username"
-                          value={formData.username}
-                          onChange={handleInputChange}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="email">Email Address</Label>
-                        <Input
-                          id="email"
-                          type="email"
-                          value={formData.email}
-                          onChange={handleInputChange}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="phone">Phone Number</Label>
-                        <Input
-                          id="phone"
-                          value={formData.phone}
-                          onChange={handleInputChange}
-                        />
-                      </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="username">Username</Label>
+                      <Input id="username" name="username" value={formData.username} onChange={handleInputChange} required />
                     </div>
-                    <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email</Label>
+                      <Input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="phone">Phone</Label>
+                      <Input id="phone" name="phone" type="tel" value={formData.phone} onChange={handleInputChange} />
+                    </div>
+                     <div className="space-y-2">
+                      <Label>Account Type</Label>
+                      <Input value={profile.role.charAt(0).toUpperCase() + profile.role.slice(1)} disabled className="bg-gray-100" />
+                    </div>
+                    <Button type="submit" disabled={isUpdating}>
+                      {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Save Changes
                     </Button>
                   </form>
@@ -240,10 +256,61 @@ const Profile = () => {
               </Card>
             </TabsContent>
 
-            {/* Other Tabs Content... */}
-            <TabsContent value="listings">{/* Your listings content */}</TabsContent>
-            <TabsContent value="favorites">{/* Your favorites content */}</TabsContent>
-            <TabsContent value="security">{/* Your security content */}</TabsContent>
+            {/* --- Security Tab (NOW WITH PASSWORD FORM) --- */}
+            <TabsContent value="security">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Change Password</CardTitle>
+                  <CardDescription>Update your account password here.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {/* +++ NEW Password Change Form +++ */}
+                  <form onSubmit={handlePasswordChangeSubmit} className="space-y-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="currentPassword">Current Password</Label>
+                      <Input 
+                        id="currentPassword" 
+                        name="currentPassword" 
+                        type="password" 
+                        value={passwordData.currentPassword}
+                        onChange={handlePasswordInputChange}
+                        required 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="newPassword">New Password</Label>
+                      <Input 
+                        id="newPassword" 
+                        name="newPassword" 
+                        type="password"
+                        value={passwordData.newPassword}
+                        onChange={handlePasswordInputChange}
+                        required 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                      <Input 
+                        id="confirmPassword" 
+                        name="confirmPassword" 
+                        type="password" 
+                        value={passwordData.confirmPassword}
+                        onChange={handlePasswordInputChange}
+                        required 
+                      />
+                    </div>
+                    <Button type="submit" disabled={isPasswordUpdating}>
+                      {isPasswordUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Change Password
+                    </Button>
+                  </form>
+                  {/* +++ END New Form +++ */}
+                </CardContent>
+              </Card>
+            </TabsContent>
+            
+            {/* --- REMOVED "My Listings" and "Favorites" Tabs --- */}
+
           </Tabs>
         </div>
       </div>

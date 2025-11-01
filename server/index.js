@@ -136,6 +136,49 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// Change Password Endpoint 
+app.put('/api/profile/change-password', authenticateToken, async (req, res) => {
+    const userId = req.user.id;
+    const { currentPassword, newPassword } = req.body;
+
+    // Basic validation
+    if (!currentPassword || !newPassword) {
+        return res.status(400).send("Current password and new password are required.");
+    }
+    
+    if (newPassword.length < 6) { // You can enforce a minimum length
+         return res.status(400).send("New password must be at least 6 characters long.");
+    }
+
+    try {
+        // 1. Get user's current hash from DB
+        const userResult = await pool.query("SELECT password_hash FROM users WHERE id = $1", [userId]);
+        if (userResult.rows.length === 0) {
+            return res.status(404).send("User not found.");
+        }
+        const user = userResult.rows[0];
+
+        // 2. Compare the provided current password with the stored hash
+        const isPasswordCorrect = await bcrypt.compare(currentPassword, user.password_hash);
+        if (!isPasswordCorrect) {
+            return res.status(401).send("Incorrect current password."); // 401 Unauthorized
+        }
+
+        // 3. Hash the new password
+        const saltRounds = 10;
+        const new_password_hash = await bcrypt.hash(newPassword, saltRounds);
+
+        // 4. Update the password in the database
+        await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [new_password_hash, userId]);
+
+        res.status(200).send("Password updated successfully.");
+
+    } catch (err) {
+        console.error("Password Change Error:", err.message);
+        res.status(500).send("Server error during password change");
+    }
+});
+
 // Post vehicles
 app.post('/api/vehicles', authenticateToken, async (req, res) => {
     try {
